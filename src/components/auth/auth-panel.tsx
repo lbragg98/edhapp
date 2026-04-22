@@ -9,7 +9,14 @@ type AuthMode = "magic_link" | "password";
 type PasswordSubmode = "sign_in" | "sign_up";
 
 function buildEmailRedirectUrl(next: string): string {
-  const baseUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? window.location.origin;
+  const explicitBaseUrl = process.env.NEXT_PUBLIC_AUTH_REDIRECT_BASE_URL
+    ?? process.env.NEXT_PUBLIC_SITE_URL
+    ?? process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL;
+
+  const isLocalHostOrigin = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+  const fallbackBaseUrl = isLocalHostOrigin ? window.location.origin : "https://v0-edhapp.vercel.app";
+  const baseUrl = explicitBaseUrl ?? fallbackBaseUrl;
+
   const redirect = new URL("/auth/callback", baseUrl);
   redirect.searchParams.set("next", next);
   return redirect.toString();
