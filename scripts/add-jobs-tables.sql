@@ -2,31 +2,22 @@
 -- Adds Job, CardRuling, and RefreshMetadata tables for async processing
 
 -- Job status enum
-DO $$ BEGIN
-  CREATE TYPE "JobStatus" AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED');
-EXCEPTION
-  WHEN duplicate_object THEN null;
-END $$;
+CREATE TYPE "JobStatus" AS ENUM ('PENDING', 'PROCESSING', 'COMPLETED', 'FAILED')
+ON CONFLICT DO NOTHING;
 
 -- Job type enum
-DO $$ BEGIN
-  CREATE TYPE "JobType" AS ENUM ('PRICE_REFRESH', 'RULINGS_REFRESH', 'CARD_METADATA_SYNC');
-EXCEPTION
-  WHEN duplicate_object THEN null;
-END $$;
+CREATE TYPE "JobType" AS ENUM ('PRICE_REFRESH', 'RULINGS_REFRESH', 'CARD_METADATA_SYNC')
+ON CONFLICT DO NOTHING;
 
 -- Refresh type enum
-DO $$ BEGIN
-  CREATE TYPE "RefreshType" AS ENUM ('PRICE', 'RULINGS');
-EXCEPTION
-  WHEN duplicate_object THEN null;
-END $$;
+CREATE TYPE "RefreshType" AS ENUM ('PRICE', 'RULINGS')
+ON CONFLICT DO NOTHING;
 
 -- Job table for background processing queue
 CREATE TABLE IF NOT EXISTS "Job" (
   "id" TEXT NOT NULL PRIMARY KEY DEFAULT gen_random_uuid()::text,
   "type" "JobType" NOT NULL,
-  "status" "JobStatus" NOT NULL DEFAULT 'PENDING',
+  "status" "JobStatus" NOT NULL DEFAULT 'PENDING'::"JobStatus",
   "priority" INTEGER NOT NULL DEFAULT 100,
   "payload" JSONB NOT NULL,
   "maxRetries" INTEGER NOT NULL DEFAULT 3,
@@ -76,6 +67,3 @@ CREATE UNIQUE INDEX IF NOT EXISTS "RefreshMetadata_type_entityId_key" ON "Refres
 
 -- Index for finding stale entries
 CREATE INDEX IF NOT EXISTS "RefreshMetadata_nextRefreshAt_idx" ON "RefreshMetadata"("nextRefreshAt");
-
--- Add rulings relation to Card (if column doesn't exist, this is handled by Prisma)
--- The relation is defined in schema.prisma, no column changes needed on Card table
