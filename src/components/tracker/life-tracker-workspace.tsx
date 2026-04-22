@@ -125,6 +125,13 @@ export function LifeTrackerWorkspace() {
                   cardName,
                 })
               }
+              onRevive={() =>
+                dispatch({
+                  type: "set_player_loss_override",
+                  playerId: player.id,
+                  suppressAutoLoss: true,
+                })
+              }
             />
           );
         })}

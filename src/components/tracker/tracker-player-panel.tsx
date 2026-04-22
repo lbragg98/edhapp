@@ -17,7 +17,7 @@ import {
   Swords,
   X,
 } from "lucide-react";
-import type { TrackerPlayer } from "@/modules/tracker";
+import { isPlayerEliminated, type TrackerPlayer } from "@/modules/tracker";
 import { cn } from "@/lib/utils";
 import { resolveScryfallArtFocusedUri } from "@/lib/scryfall-art";
 import { resolveTrackerTheme, TRACKER_PLAYER_THEMES } from "@/components/tracker/tracker-player-theme";
@@ -46,6 +46,7 @@ type TrackerPlayerPanelProps = {
   onNameChange: (name: string) => void;
   onThemeChange: (themeKey: string) => void;
   onBackgroundImageChange: (imageUri: string | null, cardName: string | null) => void;
+  onRevive: () => void;
 };
 
 function useDebouncedValue<T>(value: T, delay: number): T {
@@ -425,15 +426,18 @@ export function TrackerPlayerPanel({
   onNameChange,
   onThemeChange,
   onBackgroundImageChange,
+  onRevive,
 }: TrackerPlayerPanelProps) {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const maxCommanderDamage = Math.max(0, ...Object.values(player.commanderDamageTaken));
   const theme = resolveTrackerTheme(player.themeKey, styleIndex);
+  const isEliminated = isPlayerEliminated(player);
 
   return (
     <article
       className={cn(
         "relative isolate min-h-[195px] overflow-hidden rounded-2xl border border-white/15 px-2.5 py-2 text-zinc-100 sm:min-h-[220px] sm:px-3",
+        isEliminated && "grayscale saturate-0",
         theme.tileClass,
       )}
     >
@@ -490,6 +494,20 @@ export function TrackerPlayerPanel({
           </button>
         </div>
       </div>
+
+      {isEliminated ? (
+        <div className="absolute inset-0 z-[4] flex items-center justify-center bg-black/75 backdrop-blur-[1px]">
+          <div className="space-y-2 text-center">
+            <p className="text-[13px] uppercase tracking-[0.35em] text-zinc-300">Defeated</p>
+            <p className="font-serif text-4xl font-semibold uppercase tracking-[0.22em] text-zinc-100 sm:text-5xl">
+              YOU LOSE
+            </p>
+            <button type="button" className="nav-link nav-link-active px-3 py-1.5 text-xs" onClick={onRevive}>
+              Return to Game
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {isSettingsOpen ? (
         <PlayerSettingsPanel

@@ -70,7 +70,7 @@ export function AuthPanel() {
         }
 
         console.info("[Auth][signup] Magic link requested.", { email, redirectTo });
-        setMessage("Check your email for a secure sign-in link.");
+        setMessage("Check your email and open the link in this same browser session.");
         return;
       }
 
@@ -114,7 +114,7 @@ export function AuthPanel() {
           return;
         }
 
-        setMessage("Account created. Check your email to confirm before signing in.");
+        setMessage("Account created. Check your email and confirm in this same browser.");
         return;
       }
 

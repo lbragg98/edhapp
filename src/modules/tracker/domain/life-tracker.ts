@@ -3,6 +3,8 @@ import { z } from "zod";
 export const TRACKER_PLAYER_MIN = 2;
 export const TRACKER_PLAYER_MAX = 6;
 const TRACKER_HISTORY_LIMIT = 80;
+export const POISON_LOSS_THRESHOLD = 10;
+export const COMMANDER_DAMAGE_LOSS_THRESHOLD = 21;
 
 export const COMMANDER_LIFE_PRESETS = [40, 30, 20] as const;
 export type CommanderLifePreset = (typeof COMMANDER_LIFE_PRESETS)[number];
@@ -15,6 +17,7 @@ export type TrackerPlayer = {
   themeKey: string;
   backgroundImageUri: string | null;
   backgroundImageCardName: string | null;
+  suppressAutoLoss: boolean;
   customCounters: Record<string, number>;
   commanderDamageTaken: Record<string, number>;
 };
@@ -38,6 +41,7 @@ export type TrackerAction =
   | { type: "set_player_name"; playerId: string; name: string }
   | { type: "set_player_theme"; playerId: string; themeKey: string }
   | { type: "set_player_background_image"; playerId: string; imageUri: string | null; cardName: string | null }
+  | { type: "set_player_loss_override"; playerId: string; suppressAutoLoss: boolean }
   | { type: "adjust_life"; playerId: string; delta: number }
   | { type: "adjust_poison"; playerId: string; delta: number }
   | { type: "adjust_commander_damage"; targetPlayerId: string; sourcePlayerId: string; delta: number }
@@ -58,6 +62,7 @@ const trackerPlayerSchema: z.ZodType<TrackerPlayer> = z.object({
   themeKey: z.string().min(1).default("graphite"),
   backgroundImageUri: z.string().url().nullable().default(null),
   backgroundImageCardName: z.string().min(1).nullable().default(null),
+  suppressAutoLoss: z.boolean().default(false),
   customCounters: z.record(z.string(), z.number().int()),
   commanderDamageTaken: z.record(z.string(), z.number().int()),
 });
@@ -103,6 +108,7 @@ function createPlayerFromId(id: string, index: number, allIds: string[], life: n
     themeKey: defaultThemeForIndex(index),
     backgroundImageUri: null,
     backgroundImageCardName: null,
+    suppressAutoLoss: false,
     customCounters: {},
     commanderDamageTaken,
   };
@@ -169,6 +175,7 @@ function remapForPlayerCount(
       themeKey: existing.themeKey || defaultThemeForIndex(index),
       backgroundImageUri: existing.backgroundImageUri ?? null,
       backgroundImageCardName: existing.backgroundImageCardName ?? null,
+      suppressAutoLoss: false,
       customCounters,
       commanderDamageTaken,
     };
@@ -225,7 +232,26 @@ function normalizeHydratedPlayer(player: z.infer<typeof trackerPlayerSchema>, in
     themeKey: player.themeKey?.trim() || defaultThemeForIndex(index),
     backgroundImageUri: player.backgroundImageUri ?? null,
     backgroundImageCardName: player.backgroundImageCardName ?? null,
+    suppressAutoLoss: player.suppressAutoLoss ?? false,
   };
+}
+
+export function isPlayerAutoEliminated(player: TrackerPlayer): boolean {
+  if (player.life <= 0) {
+    return true;
+  }
+  if (player.poison >= POISON_LOSS_THRESHOLD) {
+    return true;
+  }
+  const highestCommanderDamage = Math.max(0, ...Object.values(player.commanderDamageTaken));
+  return highestCommanderDamage >= COMMANDER_DAMAGE_LOSS_THRESHOLD;
+}
+
+export function isPlayerEliminated(player: TrackerPlayer): boolean {
+  if (player.suppressAutoLoss) {
+    return false;
+  }
+  return isPlayerAutoEliminated(player);
 }
 
 function normalizeHydratedState(input: TrackerGameState): TrackerGameState {
@@ -303,12 +329,22 @@ export function lifeTrackerReducer(state: TrackerState, action: TrackerAction): 
         })),
       );
     }
+    case "set_player_loss_override": {
+      return commit(
+        state,
+        updatePlayer(state.present, action.playerId, (player) => ({
+          ...player,
+          suppressAutoLoss: action.suppressAutoLoss,
+        })),
+      );
+    }
     case "adjust_life": {
       return commit(
         state,
         updatePlayer(state.present, action.playerId, (player) => ({
           ...player,
           life: player.life + action.delta,
+          suppressAutoLoss: false,
         })),
       );
     }
@@ -318,6 +354,7 @@ export function lifeTrackerReducer(state: TrackerState, action: TrackerAction): 
         updatePlayer(state.present, action.playerId, (player) => ({
           ...player,
           poison: clampAtLeastZero(player.poison + action.delta),
+          suppressAutoLoss: false,
         })),
       );
     }
@@ -331,6 +368,7 @@ export function lifeTrackerReducer(state: TrackerState, action: TrackerAction): 
 
           return {
             ...player,
+            suppressAutoLoss: false,
             commanderDamageTaken: {
               ...player.commanderDamageTaken,
               [action.sourcePlayerId]: clampAtLeastZero(
@@ -387,6 +425,7 @@ export function lifeTrackerReducer(state: TrackerState, action: TrackerAction): 
         state,
         updatePlayer(state.present, action.playerId, (player) => ({
           ...player,
+          suppressAutoLoss: false,
           customCounters: {
             ...player.customCounters,
             [counterName]: clampAtLeastZero((player.customCounters[counterName] ?? 0) + action.delta),

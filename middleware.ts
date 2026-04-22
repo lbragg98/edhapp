@@ -42,7 +42,8 @@ export async function middleware(request: NextRequest) {
   });
 
   // Keep Supabase session cookies fresh, but do not perform route gating here.
-  await supabase.auth.getSession().catch(() => {
+  // getUser() is the recommended SSR refresh path in middleware.
+  await supabase.auth.getUser().catch(() => {
     // Session refresh failures are handled by canonical server-side guards.
   });
 

@@ -43,16 +43,23 @@ export async function GET(request: Request) {
   }
 
   if (authError) {
+    const isPkceVerifierError = authError.toLowerCase().includes("code verifier");
     console.error("[Auth][callback] Callback exchange failed.", {
       nextPath,
       authError,
+      isPkceVerifierError,
       hadCode: Boolean(code),
       hadTokenHash: Boolean(tokenHash),
       type,
     });
     const authRedirect = new URL("/auth", requestUrl.origin);
     authRedirect.searchParams.set("next", nextPath);
-    authRedirect.searchParams.set("error", authError);
+    authRedirect.searchParams.set(
+      "error",
+      isPkceVerifierError
+        ? "Secure sign-in session expired. Please request a new email link and open it in the same browser."
+        : authError,
+    );
     return NextResponse.redirect(authRedirect);
   }
 

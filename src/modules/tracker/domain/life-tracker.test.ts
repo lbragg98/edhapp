@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { createInitialTrackerState, lifeTrackerReducer } from "@/modules/tracker/domain/life-tracker";
+import {
+  createInitialTrackerState,
+  isPlayerEliminated,
+  lifeTrackerReducer,
+} from "@/modules/tracker/domain/life-tracker";
 
 describe("lifeTrackerReducer", () => {
   it("supports life updates and undo", () => {
@@ -79,5 +83,37 @@ describe("lifeTrackerReducer", () => {
     expect(withBackground.present.players[0].themeKey).toBe("ocean");
     expect(withBackground.present.players[0].backgroundImageUri).toContain("scryfall.io");
     expect(withBackground.present.players[0].backgroundImageCardName).toBe("Test Card");
+  });
+
+  it("eliminates players at lethal thresholds and allows temporary revive override", () => {
+    const initial = createInitialTrackerState();
+    const target = initial.present.players[0];
+    const source = initial.present.players[1];
+
+    const lethalCommanderDamage = lifeTrackerReducer(initial, {
+      type: "adjust_commander_damage",
+      targetPlayerId: target.id,
+      sourcePlayerId: source.id,
+      delta: 21,
+    });
+
+    expect(isPlayerEliminated(lethalCommanderDamage.present.players[0])).toBe(true);
+
+    const revived = lifeTrackerReducer(lethalCommanderDamage, {
+      type: "set_player_loss_override",
+      playerId: target.id,
+      suppressAutoLoss: true,
+    });
+
+    expect(isPlayerEliminated(revived.present.players[0])).toBe(false);
+
+    const afterStateChange = lifeTrackerReducer(revived, {
+      type: "adjust_life",
+      playerId: target.id,
+      delta: 1,
+    });
+
+    // Any life/poison/commander damage change removes the override and re-evaluates lethal state.
+    expect(isPlayerEliminated(afterStateChange.present.players[0])).toBe(true);
   });
 });
