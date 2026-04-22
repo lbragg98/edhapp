@@ -37,7 +37,11 @@ export function AuthPanel() {
       }
 
       if (mode === "magic_link") {
-        const redirectTo = `${window.location.origin}/auth/callback?next=${encodeURIComponent(next)}`;
+        // Use v0's redirect proxy URL in development, fall back to origin for production
+        const baseUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? window.location.origin;
+        const redirectTo = baseUrl.includes("?")
+          ? `${baseUrl}&next=${encodeURIComponent(next)}`
+          : `${baseUrl}?next=${encodeURIComponent(next)}`;
         const { error: authError } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
 
         if (authError) {
