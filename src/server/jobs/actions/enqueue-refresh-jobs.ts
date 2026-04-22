@@ -3,7 +3,7 @@
 import { prisma } from "@/server/db/prisma";
 
 // Feature flag - set to true once database is fully migrated and Prisma regenerated
-const JOBS_ENABLED = false;
+const JOBS_ENABLED = true;
 
 /**
  * Server action to enqueue refresh jobs for a card.
