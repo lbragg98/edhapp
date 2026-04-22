@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { Check, Library, ImageIcon } from "lucide-react";
+import { Check, Library } from "lucide-react";
 import type { ScannerConfirmationResult, ScannerIssue } from "@/modules/scanner";
 import { useCameraPermissions } from "@/modules/scanner/presentation/use-camera-permissions";
 import type { CompressionResult } from "@/modules/scanner/application/compress-image";
@@ -10,6 +10,7 @@ import { ScannerConfirmationPanel } from "@/components/scanner/scanner-confirmat
 import { ScannerCaptureZone } from "@/components/scanner/scanner-capture-zone";
 import { ScannerErrorPanel } from "@/components/scanner/scanner-error-panel";
 import { ScannerProgress } from "@/components/scanner/scanner-progress";
+import { CardPreviewThumbnail } from "@/components/cards/card-preview";
 
 type ScanStage = "upload" | "preprocessing" | "ocr" | "matching" | "complete";
 
@@ -312,20 +313,10 @@ export function ScannerWorkspace() {
                   className="rounded-xl border border-[color:var(--surface-border)] bg-white/[0.02] p-3"
                 >
                   <div className="flex items-start gap-3">
-                    <div className="h-20 w-14 shrink-0 overflow-hidden rounded border border-white/10 bg-zinc-900">
-                      {candidate.card.imageUri ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={candidate.card.imageUri}
-                          alt={candidate.card.name}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <ImageIcon size={20} className="text-zinc-600" />
-                        </div>
-                      )}
-                    </div>
+                    <CardPreviewThumbnail
+                      normalUri={candidate.card.imageUri}
+                      name={candidate.card.name}
+                    />
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium text-zinc-100">{candidate.card.name}</p>
                       <p className="truncate text-xs text-[color:var(--text-subtle)]">

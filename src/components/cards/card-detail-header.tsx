@@ -1,5 +1,6 @@
 import type { CardDetailRecord } from "@/modules/catalog";
 import { formatUsd, selectUsdPrice } from "@/modules/pricing";
+import { CardPreviewExpanded } from "@/components/cards/card-preview";
 
 function colorBadge(color: string) {
   return (
@@ -14,18 +15,16 @@ type CardDetailHeaderProps = {
 };
 
 export function CardDetailHeader({ card }: CardDetailHeaderProps) {
-  const primaryImage = card.imageUris.normal ?? card.imageUri;
-
   return (
-    <section className="surface-panel grid gap-6 p-5 sm:grid-cols-[220px_1fr] sm:p-6">
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-zinc-900">
-        {primaryImage ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img alt={card.name} src={primaryImage} className="h-full w-full object-cover" />
-        ) : (
-          <div className="aspect-[2/3]" />
-        )}
-      </div>
+    <section className="surface-panel grid gap-6 p-5 sm:grid-cols-[200px_1fr] sm:p-6">
+      <CardPreviewExpanded
+        artCropUri={card.imageUris.artCrop}
+        normalUri={card.imageUris.normal ?? card.imageUri}
+        name={card.name}
+        showFullCard
+        maxWidth={200}
+        enableLightbox
+      />
 
       <div className="space-y-5">
         <div>

@@ -14,6 +14,7 @@ import { DeckReviewPanel } from "@/components/decks/deck-review-panel";
 import type { DeckAnalyticsReport } from "@/modules/deck";
 import { estimateValuation } from "@/modules/pricing";
 import { PriceInline, ValueEstimateChip } from "@/components/pricing";
+import { CardPreviewThumbnail } from "@/components/cards/card-preview";
 
 type CardColor = "W" | "U" | "B" | "R" | "G";
 const TYPE_FILTERS = ["Any", "Land", "Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker"] as const;
@@ -93,12 +94,10 @@ function SourceCardRow({
         onClick={() => onToggleSelect(item.sourceItemId)}
         aria-label={selected ? "Deselect source card" : "Select source card"}
       />
-      <div className="h-14 w-10 overflow-hidden rounded border border-white/10 bg-zinc-900">
-        {item.imageUri ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={item.imageUri} alt={item.title} className="h-full w-full object-cover" />
-        ) : null}
-      </div>
+      <CardPreviewThumbnail
+        normalUri={item.imageUri}
+        name={item.title}
+      />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-zinc-100">{item.title}</p>
         <p className="truncate text-xs text-[color:var(--text-subtle)]">{item.subtitle}</p>
@@ -140,12 +139,10 @@ function DeckCardRow({
         onClick={() => onToggleSelect(entry.id)}
         aria-label={selected ? "Deselect deck card" : "Select deck card"}
       />
-      <div className="h-14 w-10 overflow-hidden rounded border border-white/10 bg-zinc-900">
-        {entry.imageUri ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={entry.imageUri} alt={entry.name} className="h-full w-full object-cover" />
-        ) : null}
-      </div>
+      <CardPreviewThumbnail
+        normalUri={entry.imageUri}
+        name={entry.name}
+      />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium text-zinc-100">{entry.name}</p>
         <p className="truncate text-xs text-[color:var(--text-subtle)]">{entry.typeLine}</p>

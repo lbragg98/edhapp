@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Check, ChevronDown, Loader2, Minus, Plus, X } from "lucide-react";
 import type { ScannerPrintingOption, ScannerConfirmationResult } from "@/modules/scanner";
 import { formatUsd } from "@/modules/pricing";
+import { CardPreviewThumbnail } from "@/components/cards/card-preview";
 
 type ScannerCandidate = {
   card: {
@@ -170,17 +171,11 @@ export function ScannerConfirmationPanel({
 
       <div className="p-4 sm:p-5">
         {/* Card Preview */}
-        <div className="flex items-start gap-4">
-          <div className="h-24 w-[68px] shrink-0 overflow-hidden rounded-lg border border-white/10 bg-zinc-900">
-            {(selectedPrinting?.imageUri ?? candidate.card.imageUri) ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={selectedPrinting?.imageUri ?? candidate.card.imageUri ?? ""}
-                alt={candidate.card.name}
-                className="h-full w-full object-cover"
-              />
-            ) : null}
-          </div>
+        <div className="flex items-start gap-3">
+          <CardPreviewThumbnail
+            normalUri={selectedPrinting?.imageUri ?? candidate.card.imageUri}
+            name={candidate.card.name}
+          />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium text-zinc-100">{candidate.card.name}</p>
             <p className="truncate text-xs text-[color:var(--text-subtle)]">{candidate.card.typeLine}</p>
@@ -233,12 +228,11 @@ export function ScannerConfirmationPanel({
                         selectedPrinting?.scryfallId === printing.scryfallId ? "bg-white/5" : ""
                       }`}
                     >
-                      <div className="h-10 w-7 shrink-0 overflow-hidden rounded border border-white/10 bg-zinc-800">
-                        {printing.imageUri ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={printing.imageUri} alt="" className="h-full w-full object-cover" />
-                        ) : null}
-                      </div>
+                      <CardPreviewThumbnail
+                        normalUri={printing.imageUri}
+                        name={printing.setName}
+                        className="h-10 w-7"
+                      />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs text-zinc-100">
                           {printing.setName} ({printing.setCode})

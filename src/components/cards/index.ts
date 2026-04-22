@@ -1,3 +1,4 @@
+export * from "@/components/cards/card-preview";
 export * from "@/components/cards/card-search-controls";
 export * from "@/components/cards/card-search-experience";
 export * from "@/components/cards/card-selection-grid";
