@@ -8,6 +8,13 @@ import { cn } from "@/lib/utils";
 type AuthMode = "magic_link" | "password";
 type PasswordSubmode = "sign_in" | "sign_up";
 
+function buildEmailRedirectUrl(next: string): string {
+  const baseUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? window.location.origin;
+  const redirect = new URL("/auth/callback", baseUrl);
+  redirect.searchParams.set("next", next);
+  return redirect.toString();
+}
+
 export function AuthPanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -54,10 +61,7 @@ export function AuthPanel() {
       }
 
       if (mode === "magic_link") {
-        const baseUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? window.location.origin;
-        const redirectTo = baseUrl.includes("?")
-          ? `${baseUrl}&next=${encodeURIComponent(next)}`
-          : `${baseUrl}?next=${encodeURIComponent(next)}`;
+        const redirectTo = buildEmailRedirectUrl(next);
         const { error: authError } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
 
         if (authError) {
@@ -81,12 +85,9 @@ export function AuthPanel() {
           return;
         }
 
-        const baseUrl = process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL ?? window.location.origin;
-        const redirectTo = baseUrl.includes("?")
-          ? `${baseUrl}&next=${encodeURIComponent(next)}`
-          : `${baseUrl}?next=${encodeURIComponent(next)}`;
+        const redirectTo = buildEmailRedirectUrl(next);
 
-        const { error: authError } = await supabase.auth.signUp({
+        const { data: signUpData, error: authError } = await supabase.auth.signUp({
           email,
           password,
           options: { emailRedirectTo: redirectTo },
@@ -94,6 +95,24 @@ export function AuthPanel() {
 
         if (authError) {
           setError(authError.message);
+          return;
+        }
+
+        const { error: resendError } = await supabase.auth.resend({
+          type: "signup",
+          email,
+          options: { emailRedirectTo: redirectTo },
+        });
+
+        if (resendError) {
+          if (signUpData.session) {
+            setMessage("Account created and signed in. Enable email confirmation in Supabase Auth settings if you require verification emails.");
+            router.push(next);
+            router.refresh();
+            return;
+          }
+
+          setError(resendError.message);
           return;
         }
 
