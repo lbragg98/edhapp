@@ -1,0 +1,151 @@
+import { describe, expect, it } from "vitest";
+import { analyzeDeckComposition } from "@/modules/deck/domain/analyze-deck-composition";
+import type { DeckRecord } from "@/modules/deck/domain/deck-record";
+
+function buildDeck(): DeckRecord {
+  return {
+    id: "deck_1",
+    name: "Analytics Test",
+    slug: "analytics-test",
+    description: null,
+    notes: null,
+    preferredSource: "all",
+    tags: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    cards: [
+      {
+        id: "cmd_1",
+        cardId: "card_cmd",
+        oracleId: "oracle_cmd",
+        scryfallId: "scry_cmd",
+        printingId: null,
+        zone: "commander",
+        quantity: 1,
+        name: "Atraxa, Praetors' Voice",
+        manaCost: "{1}{G}{W}{U}",
+        typeLine: "Legendary Creature — Phyrexian Angel Horror",
+        oracleText: "Flying, vigilance, deathtouch, lifelink",
+        imageUri: null,
+        colorIdentity: ["W", "U", "B", "G"],
+        legalCommander: true,
+        note: null,
+      },
+      {
+        id: "land_1",
+        cardId: "land_1",
+        oracleId: "oracle_land_1",
+        scryfallId: "scry_land_1",
+        printingId: null,
+        zone: "mainboard",
+        quantity: 36,
+        name: "Forest",
+        manaCost: null,
+        typeLine: "Basic Land — Forest",
+        oracleText: "{T}: Add {G}.",
+        imageUri: null,
+        colorIdentity: ["G"],
+        legalCommander: true,
+        note: null,
+      },
+      {
+        id: "ramp_1",
+        cardId: "ramp_1",
+        oracleId: "oracle_ramp_1",
+        scryfallId: "scry_ramp_1",
+        printingId: null,
+        zone: "mainboard",
+        quantity: 10,
+        name: "Ramp Spell",
+        manaCost: "{2}",
+        typeLine: "Sorcery",
+        oracleText: "Search your library for a land card and put it onto the battlefield tapped.",
+        imageUri: null,
+        colorIdentity: ["G"],
+        legalCommander: true,
+        note: null,
+      },
+      {
+        id: "draw_1",
+        cardId: "draw_1",
+        oracleId: "oracle_draw_1",
+        scryfallId: "scry_draw_1",
+        printingId: null,
+        zone: "mainboard",
+        quantity: 10,
+        name: "Draw Spell",
+        manaCost: "{3}{U}",
+        typeLine: "Sorcery",
+        oracleText: "Draw two cards.",
+        imageUri: null,
+        colorIdentity: ["U"],
+        legalCommander: true,
+        note: null,
+      },
+      {
+        id: "spot_1",
+        cardId: "spot_1",
+        oracleId: "oracle_spot_1",
+        scryfallId: "scry_spot_1",
+        printingId: null,
+        zone: "mainboard",
+        quantity: 8,
+        name: "Spot Removal",
+        manaCost: "{1}{B}",
+        typeLine: "Instant",
+        oracleText: "Destroy target creature.",
+        imageUri: null,
+        colorIdentity: ["B"],
+        legalCommander: true,
+        note: null,
+      },
+      {
+        id: "wipe_1",
+        cardId: "wipe_1",
+        oracleId: "oracle_wipe_1",
+        scryfallId: "scry_wipe_1",
+        printingId: null,
+        zone: "mainboard",
+        quantity: 3,
+        name: "Board Wipe",
+        manaCost: "{4}{W}",
+        typeLine: "Sorcery",
+        oracleText: "Destroy all creatures.",
+        imageUri: null,
+        colorIdentity: ["W"],
+        legalCommander: true,
+        note: null,
+      },
+      {
+        id: "misc_1",
+        cardId: "misc_1",
+        oracleId: "oracle_misc_1",
+        scryfallId: "scry_misc_1",
+        printingId: null,
+        zone: "mainboard",
+        quantity: 32,
+        name: "Support Spell",
+        manaCost: "{3}",
+        typeLine: "Artifact",
+        oracleText: "Protection from everything.",
+        imageUri: null,
+        colorIdentity: [],
+        legalCommander: true,
+        note: null,
+      },
+    ],
+  };
+}
+
+describe("analyzeDeckComposition", () => {
+  it("produces typed analytics and health indicators", () => {
+    const report = analyzeDeckComposition(buildDeck());
+
+    expect(report.totalCards).toBe(100);
+    expect(report.landCount).toBe(36);
+    expect(report.manaCurve).toHaveLength(7);
+    expect(report.healthIndicators.length).toBeGreaterThan(0);
+    expect(report.cardTypeDistribution.some((entry) => entry.type === "Land")).toBe(true);
+    expect(report.colorIdentityBalance).toHaveLength(5);
+  });
+});

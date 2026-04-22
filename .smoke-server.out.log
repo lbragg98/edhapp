@@ -1,0 +1,69 @@
+
+> edhapp@0.1.0 dev
+> next dev
+
+▲ Next.js 16.2.4 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://172.23.192.1:3000
+✓ Ready in 379ms
+Creating turbopack project { dir: 'C:\\Users\\lbrag\\LogansApp\\EDH\\edhapp', testMode: true }
+
+ GET / 200 in 29ms (next.js: 3ms, application-code: 26ms)
+ GET / 200 in 22ms (next.js: 3ms, application-code: 19ms)
+ GET /cards 200 in 3.6s (next.js: 515ms, application-code: 3.0s)
+ GET /library 200 in 380ms (next.js: 339ms, application-code: 40ms)
+ GET /decks 200 in 275ms (next.js: 232ms, application-code: 42ms)
+ GET /api/cards?query=sol%20ring&pool=all&pageSize=5 200 in 505ms (next.js: 287ms, application-code: 218ms)
+ GET /api/deckbuilder/source?mode=all&query=sol&limit=5 200 in 866ms (next.js: 106ms, application-code: 759ms)
+ POST /api/decks 503 in 103ms (next.js: 99ms, application-code: 4ms)
+ GET / 200 in 67ms (next.js: 5ms, application-code: 61ms)
+ GET / 200 in 56ms (next.js: 4ms, application-code: 52ms)
+ GET /api/decks 503 in 12ms (next.js: 4ms, application-code: 8ms)
+ GET /api/library 200 in 213ms (next.js: 202ms, application-code: 10ms)
+ POST /api/library 503 in 13ms (next.js: 4ms, application-code: 9ms)
+✓ Compiled in 39ms
+✓ Compiled in 35ms
+✓ Compiled in 73ms
+✓ Compiled in 31ms
+✓ Compiled in 33ms
+✓ Compiled in 27ms
+✓ Compiled in 29ms
+✓ Compiled in 50ms
+✓ Compiled in 61ms
+✓ Compiled in 55ms
+✓ Compiled in 61ms
+✓ Compiled in 65ms
+✓ Compiled in 32ms
+✓ Compiled in 46ms
+✓ Compiled in 38ms
+✓ Compiled in 31ms
+✓ Compiled in 29ms
+✓ Compiled in 30ms
+✓ Compiled in 37ms
+✓ Compiled in 51ms
+✓ Compiled in 32ms
+✓ Compiled in 48ms
+✓ Compiled in 43ms
+✓ Compiled in 76ms
+✓ Compiled in 38ms
+✓ Compiled in 72ms
+✓ Compiled in 60ms
+✓ Compiled in 31ms
+✓ Compiled in 33ms
+  Reload env: .env
+✓ Compiled in 32ms
+✓ Compiled in 60ms
+✓ Compiled in 64ms
+✓ Compiled in 59ms
+✓ Compiled in 66ms
+✓ Compiled in 28ms
+✓ Compiled in 31ms
+✓ Compiled in 28ms
+✓ Compiled in 29ms
+✓ Compiled in 58ms
+✓ Compiled in 62ms
+✓ Compiled in 48ms
+✓ Compiled in 62ms
+✓ Compiled in 60ms
+✓ Compiled in 51ms
+✓ Compiled in 33ms

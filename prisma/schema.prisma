@@ -1,0 +1,257 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum CardLayout {
+  NORMAL
+  SPLIT
+  MODAL_DFC
+  TRANSFORM
+  ADVENTURE
+  SAGA
+  OTHER
+}
+
+model Card {
+  id               String   @id @default(cuid())
+  oracleId         String   @unique
+  scryfallId       String   @unique
+  name             String
+  normalizedName   String   @db.VarChar(256)
+  manaCost         String?
+  cmc              Decimal  @db.Decimal(4, 2)
+  typeLine         String
+  oracleText       String?
+  power            String?
+  toughness        String?
+  colorIdentity    String[]
+  keywords         String[]
+  layout           CardLayout @default(NORMAL)
+  reserved         Boolean  @default(false)
+  legalCommander   Boolean  @default(true)
+  imageUriNormal   String?
+  imageUriArtCrop  String?
+  lastSyncedAt     DateTime @default(now())
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  printings        CardPrinting[]
+  collectionEntries CollectionEntry[]
+  deckEntries      DeckCardEntry[]
+
+  @@index([normalizedName])
+  @@index([legalCommander])
+}
+
+model CardPrinting {
+  id                String   @id @default(cuid())
+  cardId            String
+  scryfallPrintingId String  @unique
+  setCode           String   @db.VarChar(8)
+  setName           String
+  collectorNumber   String
+  rarity            String
+  releasedAt        DateTime?
+  finishes          String[]
+  imageUriNormal    String?
+  imageUriArtCrop   String?
+  createdAt         DateTime @default(now())
+
+  card              Card     @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  priceSnapshot     PriceSnapshot?
+  collectionEntries CollectionEntry[]
+  deckEntries       DeckCardEntry[]
+
+  @@index([setCode])
+  @@index([releasedAt])
+  @@index([cardId])
+}
+
+model PriceSnapshot {
+  id          String   @id @default(cuid())
+  printingId  String   @unique
+  source      String   @default("SCRYFALL")
+  currency    String   @default("USD")
+  usd         Decimal? @db.Decimal(10, 2)
+  usdFoil     Decimal? @db.Decimal(10, 2)
+  usdEtched   Decimal? @db.Decimal(10, 2)
+  eur         Decimal? @db.Decimal(10, 2)
+  eurFoil     Decimal? @db.Decimal(10, 2)
+  tix         Decimal? @db.Decimal(10, 2)
+  capturedAt  DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  printing    CardPrinting @relation(fields: [printingId], references: [id], onDelete: Cascade)
+
+  @@index([capturedAt])
+}
+
+model AppUser {
+  id                String   @id @default(cuid())
+  authUserId        String?  @unique
+  email             String?  @unique
+  displayName       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  collectionEntries CollectionEntry[]
+  decks            Deck[]
+  preference       UserPreference?
+  trackerSessions  TrackerSession[]
+  scannerImports   ScannerImport[]
+}
+
+enum CollectionFinish {
+  NONFOIL
+  FOIL
+  ETCHED
+}
+
+enum CollectionCondition {
+  NM
+  LP
+  MP
+  HP
+  DMG
+}
+
+model CollectionEntry {
+  id              String   @id @default(cuid())
+  userId          String
+  cardId          String
+  printingId      String?
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  card            Card     @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  printing        CardPrinting? @relation(fields: [printingId], references: [id], onDelete: SetNull)
+  holdings        CollectionHolding[]
+
+  @@index([userId, cardId])
+  @@index([userId, printingId])
+  @@unique([userId, cardId, printingId])
+}
+
+model CollectionHolding {
+  id              String   @id @default(cuid())
+  entryId         String
+  finish          CollectionFinish @default(NONFOIL)
+  condition       CollectionCondition @default(NM)
+  quantity        Int
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  entry           CollectionEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  @@unique([entryId, finish, condition])
+  @@index([entryId])
+}
+
+enum DeckSourceMode {
+  ALL
+  LIBRARY
+}
+
+enum DeckCardZone {
+  COMMANDER
+  MAINBOARD
+}
+
+model Deck {
+  id                String   @id @default(cuid())
+  userId            String
+  name              String
+  slug              String   @unique
+  description       String?
+  notes             String?
+  preferredSource   DeckSourceMode @default(ALL)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tags              DeckTag[]
+  cards             DeckCardEntry[]
+
+  @@index([userId, name])
+}
+
+model DeckTag {
+  id                String   @id @default(cuid())
+  deckId            String
+  value             String
+  createdAt         DateTime @default(now())
+
+  deck              Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+
+  @@unique([deckId, value])
+  @@index([deckId])
+}
+
+model DeckCardEntry {
+  id                String   @id @default(cuid())
+  deckId            String
+  cardId            String
+  printingId        String?
+  zone              DeckCardZone
+  quantity          Int
+  note              String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  deck              Deck     @relation(fields: [deckId], references: [id], onDelete: Cascade)
+  card              Card     @relation(fields: [cardId], references: [id], onDelete: Restrict)
+  printing          CardPrinting? @relation(fields: [printingId], references: [id], onDelete: SetNull)
+
+  @@unique([deckId, cardId, zone])
+  @@index([deckId, zone])
+}
+
+model UserPreference {
+  id                String   @id @default(cuid())
+  userId            String   @unique
+  defaultSourceMode DeckSourceMode @default(ALL)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TrackerSession {
+  id                String   @id @default(cuid())
+  userId            String
+  name              String?
+  gameState         Json
+  lastActiveAt      DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+}
+
+model ScannerImport {
+  id                String   @id @default(cuid())
+  userId            String
+  scanId            String
+  extractedText     String?
+  candidateCardId   String?
+  candidatePrintingId String?
+  confidence        Decimal? @db.Decimal(5, 4)
+  status            String   @default("PENDING")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  user              AppUser  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([scanId])
+}
