@@ -3,24 +3,11 @@
 import { useMemo, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser-client";
+import { buildEmailRedirectUrl } from "@/lib/auth-redirect";
 import { cn } from "@/lib/utils";
 
 type AuthMode = "magic_link" | "password";
 type PasswordSubmode = "sign_in" | "sign_up";
-
-function buildEmailRedirectUrl(next: string): string {
-  const explicitBaseUrl = process.env.NEXT_PUBLIC_AUTH_REDIRECT_BASE_URL
-    ?? process.env.NEXT_PUBLIC_SITE_URL
-    ?? process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL;
-
-  const isLocalHostOrigin = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-  const fallbackBaseUrl = isLocalHostOrigin ? window.location.origin : "https://v0-edhapp.vercel.app";
-  const baseUrl = explicitBaseUrl ?? fallbackBaseUrl;
-
-  const redirect = new URL("/auth/callback", baseUrl);
-  redirect.searchParams.set("next", next);
-  return redirect.toString();
-}
 
 export function AuthPanel() {
   const router = useRouter();
@@ -77,10 +64,12 @@ export function AuthPanel() {
         const { error: authError } = await supabase.auth.signInWithOtp({ email, options: { emailRedirectTo: redirectTo } });
 
         if (authError) {
+          console.error("[Auth][signup] Magic link send failed.", { email, redirectTo, error: authError.message });
           setError(authError.message);
           return;
         }
 
+        console.info("[Auth][signup] Magic link requested.", { email, redirectTo });
         setMessage("Check your email for a secure sign-in link.");
         return;
       }
@@ -106,25 +95,22 @@ export function AuthPanel() {
         });
 
         if (authError) {
+          console.error("[Auth][signup] Password sign-up failed.", { email, redirectTo, error: authError.message });
           setError(authError.message);
           return;
         }
 
-        const { error: resendError } = await supabase.auth.resend({
-          type: "signup",
+        console.info("[Auth][signup] Password sign-up requested.", {
           email,
-          options: { emailRedirectTo: redirectTo },
+          redirectTo,
+          hasSession: Boolean(signUpData.session),
+          hasUser: Boolean(signUpData.user),
         });
 
-        if (resendError) {
-          if (signUpData.session) {
-            setMessage("Account created and signed in. Enable email confirmation in Supabase Auth settings if you require verification emails.");
-            router.push(next);
-            router.refresh();
-            return;
-          }
-
-          setError(resendError.message);
+        if (signUpData.session) {
+          setMessage("Account created and signed in.");
+          router.push(next);
+          router.refresh();
           return;
         }
 
@@ -136,10 +122,12 @@ export function AuthPanel() {
       const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
       if (authError) {
+        console.error("[Auth][signin] Password sign-in failed.", { email, error: authError.message });
         setError(authError.message);
         return;
       }
 
+      console.info("[Auth][signin] Password sign-in succeeded.", { email });
       router.push(next);
       router.refresh();
     });
