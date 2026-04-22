@@ -3,6 +3,7 @@ import type { CardListItem } from "@/modules/catalog";
 export type ScannerIssueCode =
   | "image_missing"
   | "image_invalid"
+  | "scan_error"
   | "ocr_unavailable"
   | "ocr_empty"
   | "low_confidence_match";

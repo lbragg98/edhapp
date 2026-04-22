@@ -29,6 +29,7 @@ function toJobDescriptor(record: {
   createdAt: Date;
   processedAt: Date | null;
   completedAt: Date | null;
+  updatedAt: Date;
 }): JobDescriptor {
   return {
     id: record.id,
@@ -42,6 +43,7 @@ function toJobDescriptor(record: {
     createdAt: record.createdAt,
     processedAt: record.processedAt,
     completedAt: record.completedAt,
+    updatedAt: record.updatedAt,
   };
 }
 
@@ -49,8 +51,17 @@ function toJobDescriptor(record: {
  * Prisma-backed job queue implementation.
  */
 export class PrismaJobQueue implements JobQueue {
+  private getDb() {
+    if (!prisma) {
+      throw new Error("Database is unavailable.");
+    }
+
+    return prisma;
+  }
+
   async enqueue(input: CreateJobInput): Promise<JobDescriptor> {
-    const record = await prisma.job.create({
+    const db = this.getDb();
+    const record = await db.job.create({
       data: {
         type: input.type,
         status: "PENDING",
@@ -65,8 +76,9 @@ export class PrismaJobQueue implements JobQueue {
   }
 
   async dequeue(limit: number): Promise<JobDescriptor[]> {
+    const db = this.getDb();
     // Find pending jobs ordered by priority (lower = higher) and creation time
-    const pendingJobs = await prisma.job.findMany({
+    const pendingJobs = await db.job.findMany({
       where: { status: "PENDING" },
       orderBy: [{ priority: "asc" }, { createdAt: "asc" }],
       take: limit,
@@ -76,7 +88,7 @@ export class PrismaJobQueue implements JobQueue {
 
     // Mark them as processing
     const jobIds = pendingJobs.map((j) => j.id);
-    await prisma.job.updateMany({
+    await db.job.updateMany({
       where: { id: { in: jobIds } },
       data: {
         status: "PROCESSING",
@@ -85,7 +97,7 @@ export class PrismaJobQueue implements JobQueue {
     });
 
     // Refetch to get updated records
-    const processingJobs = await prisma.job.findMany({
+    const processingJobs = await db.job.findMany({
       where: { id: { in: jobIds } },
     });
 
@@ -93,7 +105,8 @@ export class PrismaJobQueue implements JobQueue {
   }
 
   async complete(jobId: string): Promise<void> {
-    await prisma.job.update({
+    const db = this.getDb();
+    await db.job.update({
       where: { id: jobId },
       data: {
         status: "COMPLETED",
@@ -103,13 +116,14 @@ export class PrismaJobQueue implements JobQueue {
   }
 
   async fail(jobId: string, error: string): Promise<void> {
-    const job = await prisma.job.findUnique({ where: { id: jobId } });
+    const db = this.getDb();
+    const job = await db.job.findUnique({ where: { id: jobId } });
     if (!job) return;
 
     const newRetryCount = job.retryCount + 1;
     const shouldRequeue = newRetryCount < job.maxRetries;
 
-    await prisma.job.update({
+    await db.job.update({
       where: { id: jobId },
       data: {
         status: shouldRequeue ? "PENDING" : "FAILED",
@@ -122,12 +136,14 @@ export class PrismaJobQueue implements JobQueue {
   }
 
   async getById(jobId: string): Promise<JobDescriptor | null> {
-    const record = await prisma.job.findUnique({ where: { id: jobId } });
+    const db = this.getDb();
+    const record = await db.job.findUnique({ where: { id: jobId } });
     return record ? toJobDescriptor(record) : null;
   }
 
   async getPendingCount(type?: JobType): Promise<number> {
-    return prisma.job.count({
+    const db = this.getDb();
+    return db.job.count({
       where: {
         status: "PENDING",
         ...(type && { type }),

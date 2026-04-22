@@ -21,6 +21,7 @@ function getIssueSeverity(code: string): ErrorSeverity {
   switch (code) {
     case "image_missing":
     case "image_invalid":
+    case "scan_error":
       return "error";
     case "ocr_unavailable":
     case "ocr_empty":
@@ -38,6 +39,8 @@ function getSuggestion(code: string): string | null {
       return "Capture or upload an image to scan.";
     case "image_invalid":
       return "Try a different image format (JPEG, PNG).";
+    case "scan_error":
+      return "Scan could not be completed. Try again or upload a clearer image.";
     case "ocr_unavailable":
       return "OCR service is temporarily unavailable. Try again in a moment.";
     case "ocr_empty":
@@ -96,6 +99,10 @@ export function ScannerErrorPanel({
 
   const hasErrors = errors.length > 0;
   const primaryIssue = errors[0] || warnings[0] || infos[0];
+  if (!primaryIssue) {
+    return null;
+  }
+
   const primarySeverity = getIssueSeverity(primaryIssue.code);
   const primaryStyles = severityStyles(primarySeverity);
   const primarySuggestion = getSuggestion(primaryIssue.code);

@@ -6,6 +6,7 @@ import {
 } from "@/modules/catalog/infrastructure/scryfall/schemas";
 
 const SCRYFALL_API_BASE = "https://api.scryfall.com";
+type ScryfallCardRecord = ReturnType<typeof scryfallCardSchema.parse>;
 
 async function fetchScryfallJson<T>(url: string, schema: { parse: (input: unknown) => T }): Promise<T> {
   const response = await fetch(url, {
@@ -33,7 +34,7 @@ async function fetchScryfallJson<T>(url: string, schema: { parse: (input: unknow
   return schema.parse(json);
 }
 
-function resolveImageUri(card: { image_uris?: { normal?: string } | null; card_faces?: { image_uris?: { normal?: string } | null }[] }): string | null {
+function resolveImageUri(card: ScryfallCardRecord): string | null {
   if (card.image_uris?.normal) {
     return card.image_uris.normal;
   }
@@ -67,18 +68,7 @@ export class ScryfallPrintingResolver implements ScannerPrintingResolver {
       .map((p) => this.mapToPrintingOption(p));
   }
 
-  private mapToPrintingOption(card: {
-    id: string;
-    set?: string;
-    set_name?: string;
-    collector_number?: string;
-    rarity?: string;
-    released_at?: string | null;
-    finishes?: string[];
-    image_uris?: { normal?: string } | null;
-    card_faces?: { image_uris?: { normal?: string } | null }[];
-    prices?: { usd?: string | null; usd_foil?: string | null };
-  }): ScannerPrintingOption {
+  private mapToPrintingOption(card: ScryfallCardRecord): ScannerPrintingOption {
     return {
       scryfallId: card.id,
       setCode: card.set?.toUpperCase() ?? "",

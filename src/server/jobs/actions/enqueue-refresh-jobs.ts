@@ -14,7 +14,7 @@ export async function enqueueRefreshJobs(
   printingIds: string[],
 ): Promise<void> {
   // Skip if jobs infrastructure is not enabled
-  if (!JOBS_ENABLED) return;
+  if (!JOBS_ENABLED || !prisma) return;
 
   try {
     // Enqueue rulings refresh if needed
@@ -89,7 +89,7 @@ export async function getRefreshStatus(
   lastRulingsRefresh: Date | null;
 }> {
   // Skip if jobs infrastructure is not enabled
-  if (!JOBS_ENABLED) {
+  if (!JOBS_ENABLED || !prisma) {
     return { rulingsStale: false, pricesStale: 0, lastRulingsRefresh: null };
   }
 

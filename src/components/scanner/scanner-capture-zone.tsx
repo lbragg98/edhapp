@@ -69,8 +69,13 @@ export function ScannerCaptureZone({
       // Can't capture, show error
       return;
     }
+
+    if (capabilities?.permissionState === "prompt") {
+      void onRequestPermission();
+    }
+
     captureInputRef.current?.click();
-  }, [capabilities]);
+  }, [capabilities, onRequestPermission]);
 
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();

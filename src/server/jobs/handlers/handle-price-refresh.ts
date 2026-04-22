@@ -1,5 +1,5 @@
 import { prisma } from "@/server/db/prisma";
-import { createScryfallCardCatalogRepository } from "@/modules/catalog";
+import { ScryfallCardCatalogRepository } from "@/modules/catalog";
 import type { PriceRefreshJob } from "@/server/jobs/domain/job-types";
 
 /**
@@ -7,6 +7,10 @@ import type { PriceRefreshJob } from "@/server/jobs/domain/job-types";
  * Fetches the latest card pricing from Scryfall and updates the database.
  */
 export async function handlePriceRefresh(job: PriceRefreshJob): Promise<void> {
+  if (!prisma) {
+    throw new Error("Database is unavailable.");
+  }
+
   const { printingId } = job.payload;
 
   // Fetch the printing from the database to get oracle ID
@@ -20,10 +24,10 @@ export async function handlePriceRefresh(job: PriceRefreshJob): Promise<void> {
   }
 
   // Get card catalog repository (no user scoping needed for public data)
-  const catalogRepo = createScryfallCardCatalogRepository();
+  const catalogRepo = new ScryfallCardCatalogRepository();
 
-  // Fetch fresh data from Scryfall using the printing ID (which is the Scryfall ID)
-  const scryfallCard = await catalogRepo.getById(printingId);
+  // Fetch fresh data from Scryfall using the Scryfall printing ID.
+  const scryfallCard = await catalogRepo.getById(printing.scryfallPrintingId);
 
   if (!scryfallCard) {
     throw new Error(`Card not found in Scryfall: ${printingId}`);
@@ -35,14 +39,29 @@ export async function handlePriceRefresh(job: PriceRefreshJob): Promise<void> {
       where: { id: printingId },
       data: {
         priceSnapshot: {
-          source: scryfallCard.price.source,
-          capturedAt: new Date(),
-          usd: scryfallCard.price.usd,
-          usdFoil: scryfallCard.price.usdFoil,
-          usdEtched: scryfallCard.price.usdEtched,
-          eur: scryfallCard.price.eur,
-          eurFoil: scryfallCard.price.eurFoil,
-          tix: scryfallCard.price.tix,
+          upsert: {
+            update: {
+              source: scryfallCard.price.source,
+              capturedAt: new Date(),
+              usd: scryfallCard.price.usd,
+              usdFoil: scryfallCard.price.usdFoil,
+              usdEtched: scryfallCard.price.usdEtched,
+              eur: scryfallCard.price.eur,
+              eurFoil: scryfallCard.price.eurFoil,
+              tix: scryfallCard.price.tix,
+            },
+            create: {
+              source: scryfallCard.price.source,
+              capturedAt: new Date(),
+              currency: "USD",
+              usd: scryfallCard.price.usd,
+              usdFoil: scryfallCard.price.usdFoil,
+              usdEtched: scryfallCard.price.usdEtched,
+              eur: scryfallCard.price.eur,
+              eurFoil: scryfallCard.price.eurFoil,
+              tix: scryfallCard.price.tix,
+            },
+          },
         },
       },
     });

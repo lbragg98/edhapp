@@ -1,8 +1,20 @@
 import { prisma } from "@/server/db/prisma";
 import { dispatchJob } from "@/server/jobs/handlers/dispatch-job";
+import type { Job, JobType, JobStatus } from "@/server/jobs/domain/job-types";
 
 const MAX_JOBS_PER_RUN = 50;
 const STALE_JOB_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+
+const validJobTypes: ReadonlyArray<JobType> = ["PRICE_REFRESH", "RULINGS_REFRESH", "CARD_METADATA_SYNC"];
+const validJobStatuses: ReadonlyArray<JobStatus> = ["PENDING", "PROCESSING", "COMPLETED", "FAILED"];
+
+function asJobType(value: string): JobType | null {
+  return validJobTypes.includes(value as JobType) ? (value as JobType) : null;
+}
+
+function asJobStatus(value: string): JobStatus | null {
+  return validJobStatuses.includes(value as JobStatus) ? (value as JobStatus) : null;
+}
 
 /**
  * Job worker that processes pending jobs from the queue.
@@ -13,6 +25,10 @@ export async function runJobWorker(): Promise<{
   failed: number;
   errors: string[];
 }> {
+  if (!prisma) {
+    return { processed: 0, failed: 0, errors: ["Database is unavailable."] };
+  }
+
   const errors: string[] = [];
   let processed = 0;
   let failed = 0;
@@ -47,20 +63,29 @@ export async function runJobWorker(): Promise<{
       });
 
       // Execute job handler
-      await dispatchJob({
+      const type = asJobType(job.type);
+      const status = asJobStatus("PROCESSING");
+
+      if (!type || !status) {
+        throw new Error(`Invalid job type/status for job ${job.id}`);
+      }
+
+      const jobForDispatch: Job = {
         id: job.id,
-        type: job.type as any,
-        payload: job.payload,
-        status: "PROCESSING",
+        type,
+        payload: job.payload as Job["payload"],
+        status,
         priority: job.priority,
         maxRetries: job.maxRetries,
         retryCount: job.retryCount,
         lastError: job.lastError,
         createdAt: job.createdAt,
-        processedAt: job.processedAt!,
+        processedAt: job.processedAt,
         completedAt: job.completedAt,
         updatedAt: job.updatedAt,
-      });
+      };
+
+      await dispatchJob(jobForDispatch);
 
       // Mark as completed
       await prisma.job.update({

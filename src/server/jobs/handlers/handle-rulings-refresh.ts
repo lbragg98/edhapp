@@ -7,6 +7,10 @@ import type { RulingsRefreshJob } from "@/server/jobs/domain/job-types";
  * Fetches the latest card rulings from Scryfall and stores them in the database.
  */
 export async function handleRulingsRefresh(job: RulingsRefreshJob): Promise<void> {
+  if (!prisma) {
+    throw new Error("Database is unavailable.");
+  }
+
   const { cardId } = job.payload;
 
   // Verify card exists

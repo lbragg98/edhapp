@@ -47,7 +47,28 @@ export function useCameraPermissions(): UseCameraPermissionsResult {
   }, []);
 
   useEffect(() => {
-    refresh();
+    let isMounted = true;
+
+    async function detectInitialCapabilities() {
+      setIsDetecting(true);
+      setError(null);
+      try {
+        const caps = await detectCameraCapabilities();
+        if (isMounted) {
+          setCapabilities(caps);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setError(mapCameraError(err));
+        }
+      } finally {
+        if (isMounted) {
+          setIsDetecting(false);
+        }
+      }
+    }
+
+    void detectInitialCapabilities();
 
     // Listen for permission changes
     if (typeof navigator !== "undefined" && navigator.permissions?.query) {
@@ -66,11 +87,16 @@ export function useCameraPermissions(): UseCameraPermissionsResult {
         });
 
       return () => {
+        isMounted = false;
         if (permissionStatus) {
           permissionStatus.onchange = null;
         }
       };
     }
+
+    return () => {
+      isMounted = false;
+    };
   }, [refresh]);
 
   const requestPermission = useCallback(async (): Promise<boolean> => {

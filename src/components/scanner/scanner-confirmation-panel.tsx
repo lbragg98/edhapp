@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, Loader2, Minus, Plus, X } from "lucide-react";
 import type { ScannerPrintingOption, ScannerConfirmationResult } from "@/modules/scanner";
 import { formatUsd } from "@/modules/pricing";
@@ -62,6 +62,22 @@ export function ScannerConfirmationPanel({
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmError, setConfirmError] = useState<string | null>(null);
 
+  const selectPrinting = useCallback((printing: ScannerPrintingOption) => {
+    setSelectedPrinting(printing);
+    setFinish((current) => {
+      const normalizedFinishes = printing.finishes.map((value) => value.toUpperCase());
+      if (normalizedFinishes.includes(current)) {
+        return current;
+      }
+
+      const firstAvailable = normalizedFinishes.find((value) =>
+        FINISHES.includes(value as (typeof FINISHES)[number]),
+      );
+
+      return firstAvailable ? (firstAvailable as (typeof FINISHES)[number]) : "NONFOIL";
+    });
+  }, []);
+
   // Fetch printings on mount
   useEffect(() => {
     async function fetchPrintings() {
@@ -78,15 +94,9 @@ export function ScannerConfirmationPanel({
         }
 
         setPrintings(payload.data.printings);
-        if (payload.data.printings.length > 0) {
-          setSelectedPrinting(payload.data.printings[0]);
-          // Set finish to first available for the selected printing
-          const firstFinish = payload.data.printings[0].finishes.find((f) =>
-            FINISHES.includes(f.toUpperCase() as (typeof FINISHES)[number]),
-          );
-          if (firstFinish) {
-            setFinish(firstFinish.toUpperCase() as (typeof FINISHES)[number]);
-          }
+        const [firstPrinting] = payload.data.printings;
+        if (firstPrinting) {
+          selectPrinting(firstPrinting);
         }
       } catch {
         setPrintingsError("Network error fetching printings.");
@@ -96,26 +106,15 @@ export function ScannerConfirmationPanel({
     }
 
     fetchPrintings();
-  }, [candidate.card.id]);
+  }, [candidate.card.id, selectPrinting]);
 
-  // Update finish when printing changes
-  useEffect(() => {
-    if (selectedPrinting) {
-      const normalizedFinishes = selectedPrinting.finishes.map((f) => f.toUpperCase());
-      if (!normalizedFinishes.includes(finish)) {
-        const firstAvailable = normalizedFinishes.find((f) =>
-          FINISHES.includes(f as (typeof FINISHES)[number]),
-        );
-        if (firstAvailable) {
-          setFinish(firstAvailable as (typeof FINISHES)[number]);
-        }
-      }
-    }
-  }, [selectedPrinting, finish]);
-
-  const availableFinishes = selectedPrinting
-    ? FINISHES.filter((f) => selectedPrinting.finishes.map((sf) => sf.toUpperCase()).includes(f))
-    : FINISHES;
+  const availableFinishes = useMemo(
+    () =>
+      selectedPrinting
+        ? FINISHES.filter((f) => selectedPrinting.finishes.map((sf) => sf.toUpperCase()).includes(f))
+        : FINISHES,
+    [selectedPrinting],
+  );
 
   const handleConfirm = useCallback(async () => {
     if (!selectedPrinting) return;
@@ -221,7 +220,7 @@ export function ScannerConfirmationPanel({
                       key={printing.scryfallId}
                       type="button"
                       onClick={() => {
-                        setSelectedPrinting(printing);
+                        selectPrinting(printing);
                         setShowPrintingPicker(false);
                       }}
                       className={`flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-white/5 ${

@@ -18,7 +18,7 @@ export type JobType = "PRICE_REFRESH" | "RULINGS_REFRESH" | "CARD_METADATA_SYNC"
  * Fetches current prices from Scryfall for a batch of card printings.
  */
 export type PriceRefreshPayload = {
-  printingIds: string[];
+  printingId: string;
 };
 
 /**
@@ -26,7 +26,7 @@ export type PriceRefreshPayload = {
  * Fetches current rulings from Scryfall for a batch of cards.
  */
 export type RulingsRefreshPayload = {
-  cardIds: string[];
+  cardId: string;
 };
 
 /**
@@ -38,9 +38,9 @@ export type CardMetadataSyncPayload = {
 };
 
 export type JobPayload =
-  | { type: "PRICE_REFRESH"; data: PriceRefreshPayload }
-  | { type: "RULINGS_REFRESH"; data: RulingsRefreshPayload }
-  | { type: "CARD_METADATA_SYNC"; data: CardMetadataSyncPayload };
+  | PriceRefreshPayload
+  | RulingsRefreshPayload
+  | CardMetadataSyncPayload;
 
 /**
  * Core job descriptor for queue operations.
@@ -57,7 +57,20 @@ export type JobDescriptor = {
   createdAt: Date;
   processedAt: Date | null;
   completedAt: Date | null;
+  updatedAt: Date;
 };
+
+export type PriceRefreshJob = JobDescriptor & {
+  type: "PRICE_REFRESH";
+  payload: { printingId: string };
+};
+
+export type RulingsRefreshJob = JobDescriptor & {
+  type: "RULINGS_REFRESH";
+  payload: { cardId: string };
+};
+
+export type Job = PriceRefreshJob | RulingsRefreshJob | JobDescriptor;
 
 /**
  * Input for creating a new job.

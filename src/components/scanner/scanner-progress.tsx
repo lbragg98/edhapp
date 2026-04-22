@@ -40,7 +40,7 @@ type ScannerProgressProps = {
   /** Whether there was an error */
   hasError?: boolean;
   /** Error message to display */
-  errorMessage?: string;
+  errorMessage?: string | undefined;
 };
 
 function getStageIndex(stage: ScanStage): number {
@@ -65,7 +65,6 @@ export function ScannerProgress({
         {STAGES_ORDER.slice(0, -1).map((stage, index) => {
           const isComplete = index < currentIndex || currentStage === "complete";
           const isCurrent = index === currentIndex && currentStage !== "complete";
-          const isPending = index > currentIndex;
           const isError = hasError && isCurrent;
 
           return (
