@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 import { DeckEditorWorkspace } from "@/components/decks";
 import { AppShell } from "@/components/layout";
 import { createDeckService } from "@/modules/deck";
@@ -17,13 +17,13 @@ export default async function DeckEditorPage({ params }: DeckEditorPageProps) {
   const service = createDeckService(appUser.appUserId);
 
   if (!service) {
-    notFound();
+    redirect("/decks?error=service_unavailable");
   }
 
   const payload = await service.getById(deckId);
 
   if (!payload) {
-    notFound();
+    redirect("/decks?error=deck_not_found");
   }
 
   return (

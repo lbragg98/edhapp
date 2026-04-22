@@ -50,14 +50,26 @@ export async function getAuthIdentity(): Promise<AuthIdentity | null> {
 
   const { data, error } = await supabase.auth.getUser();
 
-  if (error || !data.user) {
+  if (!error && data.user) {
+    return {
+      authUserId: data.user.id,
+      email: data.user.email ?? null,
+      displayName: toDisplayName(data.user.user_metadata),
+    };
+  }
+
+  // Fallback for just-established sessions where getUser can briefly lag.
+  const { data: sessionData } = await supabase.auth.getSession();
+  const sessionUser = sessionData.session?.user;
+
+  if (!sessionUser) {
     return null;
   }
 
   return {
-    authUserId: data.user.id,
-    email: data.user.email ?? null,
-    displayName: toDisplayName(data.user.user_metadata),
+    authUserId: sessionUser.id,
+    email: sessionUser.email ?? null,
+    displayName: toDisplayName(sessionUser.user_metadata),
   };
 }
 

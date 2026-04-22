@@ -32,6 +32,11 @@ export function AuthPanel() {
     return raw && raw.startsWith("/") ? raw : "/decks";
   }, [searchParams]);
 
+  const callbackError = useMemo(() => {
+    const raw = searchParams.get("error");
+    return typeof raw === "string" && raw.length > 0 ? raw : null;
+  }, [searchParams]);
+
   function switchMode(newMode: AuthMode) {
     setMode(newMode);
     setError(null);
@@ -243,6 +248,10 @@ export function AuthPanel() {
         {error ? (
           <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3.5 py-2.5 text-sm text-rose-300">
             {error}
+          </p>
+        ) : callbackError ? (
+          <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3.5 py-2.5 text-sm text-rose-300">
+            {callbackError}
           </p>
         ) : null}
 

@@ -9,15 +9,15 @@ import type {
   NormalizedCardSearchInput,
 } from "@/modules/catalog/domain/card-record";
 import {
-  mapScryfallCardToDetail,
-  mapScryfallCardToListItem,
-  mapScryfallCardToPrinting,
+  mapScryfallRawCardToDetail,
+  mapScryfallRawCardToListItem,
+  mapScryfallRawCardToPrinting,
 } from "@/modules/catalog/infrastructure/scryfall/mapper";
 import { fetchScryfallRulings } from "@/modules/catalog/infrastructure/scryfall/fetch-rulings";
 import {
-  scryfallCardSchema,
   scryfallErrorResponseSchema,
-  scryfallSearchResponseSchema,
+  scryfallRawCardSchema,
+  scryfallRawSearchResponseSchema,
 } from "@/modules/catalog/infrastructure/scryfall/schemas";
 
 const SCRYFALL_API_BASE = "https://api.scryfall.com";
@@ -93,10 +93,38 @@ export class ScryfallCardCatalogRepository implements CardCatalogRepository {
     url.searchParams.set("include_multilingual", "false");
     url.searchParams.set("page", String(input.page));
 
-    const parsed = await fetchScryfallJson(url.toString(), scryfallSearchResponseSchema);
+    const parsed = await fetchScryfallJson(url.toString(), scryfallRawSearchResponseSchema);
+    const items: CardSearchResult["items"] = [];
+    const skipped: Array<{ id?: string; reason: string }> = [];
+
+    for (const raw of parsed.data) {
+      const mapped = mapScryfallRawCardToListItem(raw);
+      if (!mapped.item) {
+        const maybeId = typeof raw === "object" && raw && "id" in raw && typeof (raw as { id?: unknown }).id === "string"
+          ? (raw as { id: string }).id
+          : undefined;
+        skipped.push({
+          ...(maybeId ? { id: maybeId } : {}),
+          reason: mapped.issues.map((issue) => `${issue.code}:${issue.message}`).join("; "),
+        });
+        continue;
+      }
+
+      items.push(mapped.item);
+      if (items.length >= input.pageSize) {
+        break;
+      }
+    }
+
+    if (skipped.length > 0) {
+      console.warn("[ScryfallCatalog] Skipped invalid search card records", {
+        skippedCount: skipped.length,
+        sample: skipped.slice(0, 5),
+      });
+    }
 
     return {
-      items: parsed.data.slice(0, input.pageSize).map(mapScryfallCardToListItem),
+      items,
       hasMore: parsed.has_more,
       nextPage: parsed.has_more ? input.page + 1 : null,
       total: parsed.total_cards ?? null,
@@ -106,20 +134,46 @@ export class ScryfallCardCatalogRepository implements CardCatalogRepository {
   async getById(cardId: string): Promise<CardDetailRecord | null> {
     const cardUrl = `${SCRYFALL_API_BASE}/cards/${cardId}`;
 
-    const card = await fetchScryfallJson(cardUrl, scryfallCardSchema);
+    const card = await fetchScryfallJson(cardUrl, scryfallRawCardSchema);
 
-    let printings: CardPrintingRecord[] = [];
+    const printings: CardPrintingRecord[] = [];
     let rulings: CardRulingRecord[] = [];
 
     if (card.prints_search_uri) {
       const printingsResponse = await fetchScryfallJson(
         `${card.prints_search_uri}&order=released&dir=desc&unique=prints`,
-        scryfallSearchResponseSchema,
+        scryfallRawSearchResponseSchema,
       );
-      printings = printingsResponse.data.slice(0, 24).map(mapScryfallCardToPrinting);
+      const skippedPrintings: Array<{ id?: string; reason: string }> = [];
+      for (const rawPrinting of printingsResponse.data) {
+        const mappedPrinting = mapScryfallRawCardToPrinting(rawPrinting);
+        if (!mappedPrinting.printing) {
+          const maybeId = typeof rawPrinting === "object" && rawPrinting && "id" in rawPrinting && typeof (rawPrinting as { id?: unknown }).id === "string"
+            ? (rawPrinting as { id: string }).id
+            : undefined;
+          skippedPrintings.push({
+            ...(maybeId ? { id: maybeId } : {}),
+            reason: mappedPrinting.issues.map((issue) => `${issue.code}:${issue.message}`).join("; "),
+          });
+          continue;
+        }
+
+        printings.push(mappedPrinting.printing);
+        if (printings.length >= 24) {
+          break;
+        }
+      }
+
+      if (skippedPrintings.length > 0) {
+        console.warn("[ScryfallCatalog] Skipped invalid printing records", {
+          cardId,
+          skippedCount: skippedPrintings.length,
+          sample: skippedPrintings.slice(0, 5),
+        });
+      }
     }
 
-    if (card.rulings_uri) {
+    if (card.rulings_uri && card.id) {
       try {
         rulings = (await fetchScryfallRulings(card.id)).slice(0, 48);
       } catch {
@@ -127,6 +181,15 @@ export class ScryfallCardCatalogRepository implements CardCatalogRepository {
       }
     }
 
-    return mapScryfallCardToDetail(card, printings, rulings);
+    const detail = mapScryfallRawCardToDetail(card, printings, rulings);
+    if (!detail.detail) {
+      console.warn("[ScryfallCatalog] Card detail unusable after normalization", {
+        cardId,
+        issues: detail.issues,
+      });
+      return null;
+    }
+
+    return detail.detail;
   }
 }
