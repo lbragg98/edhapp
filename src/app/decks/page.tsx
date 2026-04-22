@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Layers } from "lucide-react";
+import { Download, Layers } from "lucide-react";
 import { AppShell, SectionHeading } from "@/components/layout";
 import { DeckCreatePanel } from "@/components/decks";
 import { EmptyState } from "@/components/primitives";
@@ -35,19 +35,30 @@ export default async function DecksPage() {
               />
             ) : (
               decks.map((deck) => (
-                <Link
-                  key={deck.id}
-                  href={`/decks/${deck.id}`}
-                  className="surface-card interactive-lift flex items-center justify-between p-4"
-                >
-                  <div>
-                    <p className="text-sm font-medium text-zinc-100">{deck.name}</p>
-                    <p className="text-xs text-[color:var(--text-subtle)]">
-                      {deck.cards.reduce((sum, entry) => sum + entry.quantity, 0)} cards
-                    </p>
+                <article key={deck.id} className="surface-card interactive-lift p-4">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <p className="text-sm font-medium text-zinc-100">{deck.name}</p>
+                      <p className="text-xs text-[color:var(--text-subtle)]">
+                        {deck.cards.reduce((sum, entry) => sum + entry.quantity, 0)} cards
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      <a
+                        href={`/api/decks/${deck.id}/playtest-pdf`}
+                        className="nav-link"
+                        download
+                      >
+                        <Download size={14} className="mr-1.5" />
+                        Download Playtest PDF
+                      </a>
+                      <Link href={`/decks/${deck.id}`} className="nav-link nav-link-active">
+                        Open
+                      </Link>
+                    </div>
                   </div>
-                  <span className="nav-link nav-link-active">Open</span>
-                </Link>
+                </article>
               ))
             )}
           </div>

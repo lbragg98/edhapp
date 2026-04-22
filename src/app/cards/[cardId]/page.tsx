@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import {
   CardIntelligenceWorkspace,
 } from "@/components/cards";
@@ -33,6 +33,9 @@ export default async function CardDetailPage({ params, searchParams }: CardDetai
   const card = await service.execute({ cardId, pool });
 
   if (!card) {
+    if (pool === "library") {
+      redirect("/cards?pool=library&error=card_not_in_library");
+    }
     notFound();
   }
 

@@ -12,6 +12,16 @@ function isProtectedApi(pathname: string) {
   return protectedApiPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+function isLibraryScopedCardsPage(pathname: string, searchParams: URLSearchParams) {
+  const isCardsPath = pathname === "/cards" || pathname.startsWith("/cards/");
+  return isCardsPath && searchParams.get("pool") === "library";
+}
+
+function isLibraryScopedCardsApi(pathname: string, searchParams: URLSearchParams) {
+  const isCardsApiPath = pathname === "/api/cards" || pathname.startsWith("/api/cards/");
+  return isCardsApiPath && searchParams.get("pool") === "library";
+}
+
 export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -46,8 +56,10 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const pathname = request.nextUrl.pathname;
-  const isProtected = isProtectedPath(pathname);
-  const isProtectedEndpoint = isProtectedApi(pathname);
+  const isProtected = isProtectedPath(pathname)
+    || isLibraryScopedCardsPage(pathname, request.nextUrl.searchParams);
+  const isProtectedEndpoint = isProtectedApi(pathname)
+    || isLibraryScopedCardsApi(pathname, request.nextUrl.searchParams);
 
   if (!user && isProtectedEndpoint) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
@@ -68,8 +80,10 @@ export const config = {
     "/decks/:path*",
     "/library/:path*",
     "/scanner/:path*",
+    "/cards/:path*",
     "/api/decks/:path*",
     "/api/library/:path*",
     "/api/scanner/:path*",
+    "/api/cards/:path*",
   ],
 };

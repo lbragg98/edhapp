@@ -28,6 +28,8 @@ const pricesSchema = z.object({
   tix: z.string().nullable().optional(),
 });
 
+const permissiveLegalitySchema = z.string();
+
 export const scryfallCardSchema = z.object({
   id: z.string(),
   oracle_id: z.string().nullable().optional(),
@@ -52,6 +54,32 @@ export const scryfallCardSchema = z.object({
   prices: pricesSchema.optional(),
 });
 
+export const scryfallRawCardSchema = z
+  .object({
+    id: z.string().optional(),
+    oracle_id: z.string().nullable().optional(),
+    name: z.string().optional(),
+    mana_cost: z.string().nullable().optional(),
+    type_line: z.string().optional(),
+    layout: z.string().optional(),
+    oracle_text: z.string().nullable().optional(),
+    color_identity: z.array(z.string()).optional(),
+    cmc: z.number().optional(),
+    legalities: z.record(z.string(), permissiveLegalitySchema).optional(),
+    image_uris: imageUrisSchema,
+    card_faces: z.array(cardFaceSchema).optional(),
+    prints_search_uri: z.string().url().optional(),
+    rulings_uri: z.string().url().optional(),
+    set: z.string().optional(),
+    set_name: z.string().optional(),
+    collector_number: z.string().optional(),
+    rarity: z.string().optional(),
+    released_at: z.string().nullable().optional(),
+    finishes: z.array(z.string()).optional(),
+    prices: pricesSchema.optional(),
+  })
+  .passthrough();
+
 export const scryfallRulingSchema = z.object({
   source: z.enum(["wotc", "scryfall"]),
   published_at: z.string(),
@@ -65,6 +93,13 @@ export const scryfallRulingsResponseSchema = z.object({
 export const scryfallSearchResponseSchema = z.object({
   data: z.array(scryfallCardSchema),
   has_more: z.boolean(),
+  total_cards: z.number().optional(),
+  next_page: z.string().url().optional(),
+});
+
+export const scryfallRawSearchResponseSchema = z.object({
+  data: z.array(z.unknown()),
+  has_more: z.boolean().optional().default(false),
   total_cards: z.number().optional(),
   next_page: z.string().url().optional(),
 });
