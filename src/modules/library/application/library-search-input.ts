@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CARD_COLORS } from "@/modules/catalog/domain/card-record";
 import {
   COLLECTION_CONDITIONS,
   COLLECTION_FINISHES,
@@ -6,7 +7,7 @@ import {
   type NormalizedLibrarySearchInput,
 } from "@/modules/library/domain/library-record";
 
-const colorSchema = z.enum(["W", "U", "B", "R", "G"]);
+const colorSchema = z.enum(CARD_COLORS);
 
 export const librarySearchInputSchema = z.object({
   query: z.string().trim().max(120).optional(),

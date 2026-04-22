@@ -1,12 +1,13 @@
 import { z } from "zod";
 import {
+  CARD_COLORS,
   CARD_POOLS,
   CARD_SORTS,
   type CardSearchInput,
   type NormalizedCardSearchInput,
 } from "@/modules/catalog/domain/card-record";
 
-const cardColorSchema = z.enum(["W", "U", "B", "R", "G"]);
+const cardColorSchema = z.enum(CARD_COLORS);
 
 export const cardSearchInputSchema = z.object({
   query: z.string().trim().max(120).optional(),

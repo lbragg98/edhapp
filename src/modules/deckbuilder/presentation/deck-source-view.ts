@@ -33,5 +33,67 @@ export const deckSourceResultViewSchema = z.object({
 });
 
 export function toDeckSourceResultView(payload: unknown) {
-  return deckSourceResultViewSchema.parse(payload);
+  const meta = z
+    .object({
+      mode: z.enum(["all", "library"]),
+      items: z.array(z.unknown()),
+    })
+    .parse(payload);
+
+  const items = meta.items.flatMap((entry, index) => {
+    const parsed = cardSelectionRecordViewSchema.safeParse(entry);
+    if (parsed.success) {
+      return [parsed.data];
+    }
+
+    console.warn("[Filters][deckbuilder-source] Skipped invalid source record.", {
+      index,
+      issues: parsed.error.issues,
+    });
+    return [];
+  });
+
+  return { mode: meta.mode, items };
+}
+
+export function parseDeckSourceResultResponse(payload: unknown, context: string) {
+  const envelope = z.object({ data: z.unknown() }).safeParse(payload);
+  if (!envelope.success) {
+    console.warn("[Filters][deckbuilder-source] Invalid source API payload envelope.", {
+      context,
+      issues: envelope.error.issues,
+    });
+    return null;
+  }
+
+  const parsed = z
+    .object({
+      mode: z.enum(["all", "library"]),
+      items: z.array(z.unknown()),
+    })
+    .safeParse(envelope.data.data);
+
+  if (!parsed.success) {
+    console.warn("[Filters][deckbuilder-source] Invalid source API payload data.", {
+      context,
+      issues: parsed.error.issues,
+    });
+    return null;
+  }
+
+  const items = parsed.data.items.flatMap((entry, index) => {
+    const item = cardSelectionRecordViewSchema.safeParse(entry);
+    if (item.success) {
+      return [item.data];
+    }
+
+    console.warn("[Filters][deckbuilder-source] Skipped malformed source entry from API payload.", {
+      context,
+      index,
+      issues: item.error.issues,
+    });
+    return [];
+  });
+
+  return { mode: parsed.data.mode, items };
 }

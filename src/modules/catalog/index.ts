@@ -1,6 +1,7 @@
 export * from "@/modules/catalog/domain/card-record";
 export * from "@/modules/catalog/domain/card-catalog-repository";
 export * from "@/modules/catalog/application/card-search-input";
+export * from "@/modules/catalog/application/card-color-filter";
 export * from "@/modules/catalog/application/search-cards";
 export * from "@/modules/catalog/application/get-card-detail";
 export * from "@/modules/catalog/application/services";

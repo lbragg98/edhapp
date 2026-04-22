@@ -15,6 +15,7 @@ import type { DeckAnalyticsReport } from "@/modules/deck";
 import { estimateValuation } from "@/modules/pricing";
 import { PriceInline, ValueEstimateChip } from "@/components/pricing";
 import { CardPreviewThumbnail } from "@/components/cards/card-preview";
+import { parseDeckSourceResultResponse } from "@/modules/deckbuilder";
 
 type CardColor = "W" | "U" | "B" | "R" | "G";
 const TYPE_FILTERS = ["Any", "Land", "Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker"] as const;
@@ -50,10 +51,16 @@ function parseApproximateCmc(manaCost: string | null): number {
 }
 
 function matchesFilters(input: { typeLine: string; manaCost: string | null; colorIdentity: string[] }, filters: PanelFilters) {
+  const normalizedTypeLine = typeof input.typeLine === "string" ? input.typeLine : "";
+  const normalizedManaCost = typeof input.manaCost === "string" ? input.manaCost : null;
+  const normalizedColorIdentity = Array.isArray(input.colorIdentity)
+    ? input.colorIdentity.filter((entry): entry is string => typeof entry === "string")
+    : [];
+
   const typeOk =
-    filters.type === "Any" || input.typeLine.toLowerCase().includes(filters.type.toLowerCase());
-  const cmcOk = filters.maxCmc === null || parseApproximateCmc(input.manaCost) <= filters.maxCmc;
-  const colorOk = filters.color === null || input.colorIdentity.includes(filters.color);
+    filters.type === "Any" || normalizedTypeLine.toLowerCase().includes(filters.type.toLowerCase());
+  const cmcOk = filters.maxCmc === null || parseApproximateCmc(normalizedManaCost) <= filters.maxCmc;
+  const colorOk = filters.color === null || normalizedColorIdentity.includes(filters.color);
   return typeOk && cmcOk && colorOk;
 }
 
@@ -259,8 +266,14 @@ export function DeckEditorWorkspace({
 
       fetch(`/api/deckbuilder/source?${params.toString()}`)
         .then((response) => response.json())
-        .then((payload: { data: { items: CardSelectionRecord[] } }) => {
-          setSourceItems(payload.data.items);
+        .then((payload) => {
+          const parsed = parseDeckSourceResultResponse(payload, "deck_editor_source_panel");
+          if (!parsed) {
+            setSourceItems([]);
+            return;
+          }
+
+          setSourceItems(parsed.items);
         })
         .catch(() => {
           setSourceItems([]);

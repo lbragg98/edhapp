@@ -13,7 +13,16 @@ export class ListLibraryCardsService {
       return DEFAULT_EMPTY;
     }
 
-    const normalized = normalizeLibrarySearchInput(input);
+    let normalized;
+    try {
+      normalized = normalizeLibrarySearchInput(input);
+    } catch (error) {
+      console.warn("[Filters][library] Invalid library search input. Falling back to defaults.", {
+        input,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      normalized = normalizeLibrarySearchInput({});
+    }
     try {
       return await this.repository.list(normalized);
     } catch (error) {

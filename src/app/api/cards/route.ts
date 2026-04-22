@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   createSearchCardsService,
+  parseCardColorCsv,
   toCardSearchResultView,
   CARD_POOLS,
   CARD_SORTS,
@@ -18,19 +19,6 @@ const querySchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
   pageSize: z.coerce.number().int().min(1).max(36).optional(),
 });
-
-function parseColors(value: string | undefined): string[] | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const colors = value
-    .split(",")
-    .map((color) => color.trim().toUpperCase())
-    .filter(Boolean);
-
-  return colors.length > 0 ? colors : undefined;
-}
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
@@ -56,20 +44,28 @@ export async function GET(request: Request) {
   }
 
   const service = createSearchCardsService(auth.appUser?.appUserId);
-  const colors = parseColors(parsed.data.colors);
+  const colors = parseCardColorCsv(parsed.data.colors, "api_cards_query");
 
-  const result = await service.execute({
-    ...(parsed.data.query ? { query: parsed.data.query } : {}),
-    ...(colors ? { colors } : {}),
-    ...(parsed.data.typeLine ? { typeLine: parsed.data.typeLine } : {}),
-    ...(parsed.data.commanderOnly !== undefined
-      ? { commanderOnly: parsed.data.commanderOnly === "true" }
-      : {}),
-    ...(parsed.data.pool ? { pool: parsed.data.pool } : {}),
-    ...(parsed.data.sort ? { sort: parsed.data.sort } : {}),
-    ...(parsed.data.page !== undefined ? { page: parsed.data.page } : {}),
-    ...(parsed.data.pageSize !== undefined ? { pageSize: parsed.data.pageSize } : {}),
-  });
+  try {
+    const result = await service.execute({
+      ...(parsed.data.query ? { query: parsed.data.query } : {}),
+      ...(colors ? { colors } : {}),
+      ...(parsed.data.typeLine ? { typeLine: parsed.data.typeLine } : {}),
+      ...(parsed.data.commanderOnly !== undefined
+        ? { commanderOnly: parsed.data.commanderOnly === "true" }
+        : {}),
+      ...(parsed.data.pool ? { pool: parsed.data.pool } : {}),
+      ...(parsed.data.sort ? { sort: parsed.data.sort } : {}),
+      ...(parsed.data.page !== undefined ? { page: parsed.data.page } : {}),
+      ...(parsed.data.pageSize !== undefined ? { pageSize: parsed.data.pageSize } : {}),
+    });
 
-  return NextResponse.json({ data: toCardSearchResultView(result) });
+    return NextResponse.json({ data: toCardSearchResultView(result) });
+  } catch (error) {
+    console.error("[Filters][cards] Failed to apply filters.", {
+      query: parsed.data,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    return NextResponse.json({ error: "Unable to apply card filters" }, { status: 400 });
+  }
 }

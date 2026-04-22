@@ -8,6 +8,9 @@ export const CARD_SORTS = ["relevance", "name", "released"] as const;
 
 export type CardSort = (typeof CARD_SORTS)[number];
 
+export const CARD_COLORS = ["W", "U", "B", "R", "G"] as const;
+export type CardColor = (typeof CARD_COLORS)[number];
+
 export type CardLegalityStatus = "legal" | "not_legal" | "restricted" | "banned";
 
 export type CardPriceSnapshot = PriceSnapshot;

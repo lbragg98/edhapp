@@ -1,6 +1,6 @@
 import { AppShell, SectionHeading } from "@/components/layout";
 import { CardSearchExperience } from "@/components/cards";
-import { createSearchCardsService } from "@/modules/catalog";
+import { createSearchCardsService, parseCardColorsFromParam } from "@/modules/catalog";
 import { requirePageAppUser } from "@/server/auth";
 
 export const dynamic = "force-dynamic";
@@ -9,8 +9,12 @@ type CardsPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 };
 
-function parseString(value: string | string[] | undefined): string {
-  return typeof value === "string" ? value : "";
+function parseBoundedString(value: string | string[] | undefined, maxLength: number): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  return value.trim().slice(0, maxLength);
 }
 
 function parseBoolean(value: string | string[] | undefined, fallback: boolean): boolean {
@@ -19,17 +23,6 @@ function parseBoolean(value: string | string[] | undefined, fallback: boolean): 
   }
 
   return value === "true";
-}
-
-function parseColors(value: string | string[] | undefined): string[] {
-  if (typeof value !== "string" || !value) {
-    return [];
-  }
-
-  return value
-    .split(",")
-    .map((entry) => entry.trim().toUpperCase())
-    .filter(Boolean);
 }
 
 function parseSort(value: string | string[] | undefined): "relevance" | "name" | "released" {
@@ -51,12 +44,12 @@ function parsePool(value: string | string[] | undefined): "all" | "library" {
 export default async function CardsPage({ searchParams }: CardsPageProps) {
   const params = await searchParams;
 
-  const query = parseString(params.query);
-  const typeLine = parseString(params.typeLine);
+  const query = parseBoundedString(params.query, 120);
+  const typeLine = parseBoundedString(params.typeLine, 60);
   const commanderOnly = parseBoolean(params.commanderOnly, true);
   const sort = parseSort(params.sort);
   const pool = parsePool(params.pool);
-  const colors = parseColors(params.colors);
+  const colors = parseCardColorsFromParam(params.colors, "cards_page_search_params");
 
   const appUser = pool === "library" ? await requirePageAppUser("/cards?pool=library") : null;
   const service = createSearchCardsService(appUser?.appUserId);

@@ -7,6 +7,7 @@ import {
   createListLibraryCardsService,
   toLibraryRecordListView,
 } from "@/modules/library";
+import { parseCardColorCsv } from "@/modules/catalog";
 import { requireApiAppUser } from "@/server/auth";
 
 const querySchema = z.object({
@@ -24,19 +25,6 @@ const addBodySchema = z.object({
   condition: z.enum(COLLECTION_CONDITIONS).optional(),
   note: z.string().trim().max(250).optional(),
 });
-
-function parseColors(value: string | undefined): string[] | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const colors = value
-    .split(",")
-    .map((entry) => entry.trim().toUpperCase())
-    .filter(Boolean);
-
-  return colors.length > 0 ? colors : undefined;
-}
 
 export async function GET(request: Request) {
   const auth = await requireApiAppUser();
@@ -58,17 +46,25 @@ export async function GET(request: Request) {
   }
 
   const service = createListLibraryCardsService(auth.appUser.appUserId);
-  const colors = parseColors(parsed.data.colors);
+  const colors = parseCardColorCsv(parsed.data.colors, "api_library_query");
 
-  const records = await service.execute({
-    ...(parsed.data.query ? { query: parsed.data.query } : {}),
-    ...(colors ? { colors } : {}),
-    ...(parsed.data.finish ? { finish: parsed.data.finish } : {}),
-    ...(parsed.data.condition ? { condition: parsed.data.condition } : {}),
-    ...(parsed.data.pageSize !== undefined ? { pageSize: parsed.data.pageSize } : {}),
-  });
+  try {
+    const records = await service.execute({
+      ...(parsed.data.query ? { query: parsed.data.query } : {}),
+      ...(colors ? { colors } : {}),
+      ...(parsed.data.finish ? { finish: parsed.data.finish } : {}),
+      ...(parsed.data.condition ? { condition: parsed.data.condition } : {}),
+      ...(parsed.data.pageSize !== undefined ? { pageSize: parsed.data.pageSize } : {}),
+    });
 
-  return NextResponse.json({ data: toLibraryRecordListView(records) });
+    return NextResponse.json({ data: toLibraryRecordListView(records) });
+  } catch (error) {
+    console.error("[Filters][library] Failed to apply filters.", {
+      query: parsed.data,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    return NextResponse.json({ error: "Unable to apply library filters" }, { status: 400 });
+  }
 }
 
 export async function POST(request: Request) {

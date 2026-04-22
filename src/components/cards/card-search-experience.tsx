@@ -6,7 +6,7 @@ import { CardSearchControls } from "@/components/cards/card-search-controls";
 import { CardSelectionGrid } from "@/components/cards/card-selection-grid";
 import { Stack } from "@/components/primitives";
 import type { CardSearchResult } from "@/modules/catalog";
-import { toCardSelectionItems } from "@/modules/catalog";
+import { parseCardSearchResultResponse, toCardSelectionItems } from "@/modules/catalog";
 
 type CardSearchExperienceProps = {
   initialResult: CardSearchResult;
@@ -113,8 +113,14 @@ export function CardSearchExperience({
         return;
       }
 
-      const payload = (await response.json()) as { data: CardSearchResult };
-      setResult(payload.data);
+      const payload = await response.json();
+      const parsed = parseCardSearchResultResponse(payload, "card_search_experience");
+      if (!parsed) {
+        setIsLoading(false);
+        return;
+      }
+
+      setResult(parsed);
       setIsLoading(false);
     }
 

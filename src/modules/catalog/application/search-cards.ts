@@ -16,7 +16,16 @@ export class SearchCardsService {
   constructor(private readonly repositories: CardCatalogRepositoryMap) {}
 
   async execute(input: CardSearchInput): Promise<CardSearchResult> {
-    const query = normalizeCardSearchInput(input);
+    let query;
+    try {
+      query = normalizeCardSearchInput(input);
+    } catch (error) {
+      console.warn("[Filters][catalog] Invalid card search input. Falling back to defaults.", {
+        input,
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      query = normalizeCardSearchInput({});
+    }
     const repository = this.repositories[query.pool];
 
     if (!repository) {
