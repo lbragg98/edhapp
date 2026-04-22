@@ -3,9 +3,14 @@ import { notFound } from "next/navigation";
 import {
   CardIntelligenceWorkspace,
 } from "@/components/cards";
+import { StalenessIndicator } from "@/components/cards/staleness-indicator";
 import { AppShell } from "@/components/layout";
 import { createGetCardDetailService } from "@/modules/catalog";
 import { requirePageAppUser } from "@/server/auth";
+import {
+  enqueueRefreshJobs,
+  getRefreshStatus,
+} from "@/server/jobs/actions/enqueue-refresh-jobs";
 
 export const dynamic = "force-dynamic";
 
@@ -31,12 +36,26 @@ export default async function CardDetailPage({ params, searchParams }: CardDetai
     notFound();
   }
 
+  // Enqueue refresh jobs if data is stale (fire and forget)
+  const printingIds = card.printings.map((p) => p.id);
+  enqueueRefreshJobs(cardId, printingIds).catch((err) =>
+    console.error("[CardDetail] Failed to enqueue refresh jobs:", err),
+  );
+
+  // Check staleness for UI indicator
+  const refreshStatus = await getRefreshStatus(cardId, printingIds);
+
   return (
     <AppShell>
-      <div className="mb-5">
+      <div className="mb-5 space-y-3">
         <Link href={`/cards?pool=${pool}`} className="nav-link w-fit">
           Back to Search
         </Link>
+        <StalenessIndicator
+          rulingsStale={refreshStatus.rulingsStale}
+          pricesStale={refreshStatus.pricesStale}
+          totalPrintings={printingIds.length}
+        />
       </div>
 
       <CardIntelligenceWorkspace card={card} />
