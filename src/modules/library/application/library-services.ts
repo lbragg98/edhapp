@@ -14,8 +14,14 @@ export class ListLibraryCardsService {
     }
 
     const normalized = normalizeLibrarySearchInput(input);
-
-    return this.repository.list(normalized);
+    try {
+      return await this.repository.list(normalized);
+    } catch (error) {
+      console.error("[Library] Failed to list cards.", {
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      return DEFAULT_EMPTY;
+    }
   }
 }
 

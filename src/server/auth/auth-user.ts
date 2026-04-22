@@ -93,22 +93,31 @@ export async function getAppUserIdentity(): Promise<AppUserIdentity | null> {
     return null;
   }
 
-  const appUser = await prisma.appUser.upsert({
-    where: { authUserId: identity.authUserId },
-    update: {
-      ...(identity.email ? { email: identity.email } : {}),
-      ...(identity.displayName ? { displayName: identity.displayName } : {}),
-    },
-    create: {
+  try {
+    const appUser = await prisma.appUser.upsert({
+      where: { authUserId: identity.authUserId },
+      update: {
+        ...(identity.email ? { email: identity.email } : {}),
+        ...(identity.displayName ? { displayName: identity.displayName } : {}),
+      },
+      create: {
+        authUserId: identity.authUserId,
+        email: identity.email,
+        displayName: identity.displayName,
+      },
+      select: { id: true },
+    });
+
+    return {
+      ...identity,
+      appUserId: appUser.id,
+    };
+  } catch (error) {
+    console.error("[Auth] Failed to resolve AppUser identity.", {
       authUserId: identity.authUserId,
       email: identity.email,
-      displayName: identity.displayName,
-    },
-    select: { id: true },
-  });
-
-  return {
-    ...identity,
-    appUserId: appUser.id,
-  };
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    return null;
+  }
 }
