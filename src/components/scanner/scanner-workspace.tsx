@@ -1,7 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { Check, Library } from "lucide-react";
+import type { ScannerConfirmationResult } from "@/modules/scanner";
 import { formatPercentRatio, formatUsd } from "@/modules/pricing";
+import { ScannerConfirmationPanel } from "@/components/scanner/scanner-confirmation-panel";
 
 type ScannerCandidate = {
   card: {
@@ -58,6 +61,10 @@ export function ScannerWorkspace() {
   const [scan, setScan] = useState<ScannerResponse | null>(null);
   const [issues, setIssues] = useState<ScannerIssue[]>([]);
   const [isScanning, setIsScanning] = useState(false);
+
+  // Confirmation flow state
+  const [confirmingCandidate, setConfirmingCandidate] = useState<ScannerCandidate | null>(null);
+  const [lastImport, setLastImport] = useState<ScannerConfirmationResult | null>(null);
 
   const previewUrl = useMemo(() => (selectedFile ? URL.createObjectURL(selectedFile) : null), [selectedFile]);
 
@@ -220,9 +227,22 @@ export function ScannerWorkspace() {
                         <p className="mt-2 text-xs text-[color:var(--text-subtle)]">{candidate.reasons[0]}</p>
                       ) : null}
                     </div>
-                    <a href={`/cards/${candidate.card.id}?pool=all`} className="nav-link nav-link-active h-fit">
-                      View
-                    </a>
+                    <div className="flex shrink-0 flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setConfirmingCandidate(candidate);
+                          setLastImport(null);
+                        }}
+                        className="nav-link nav-link-active"
+                      >
+                        <Library size={14} className="mr-1.5" />
+                        Import
+                      </button>
+                      <a href={`/cards/${candidate.card.id}?pool=all`} className="nav-link text-xs">
+                        View
+                      </a>
+                    </div>
                   </div>
                 </article>
               ))
@@ -234,6 +254,50 @@ export function ScannerWorkspace() {
           </div>
         </div>
       </section>
+
+      {/* Confirmation Panel Overlay */}
+      {confirmingCandidate && scan ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/60 backdrop-blur-sm sm:items-center sm:p-4">
+          <div className="w-full max-w-md animate-in slide-in-from-bottom-4 sm:slide-in-from-bottom-0 sm:zoom-in-95">
+            <ScannerConfirmationPanel
+              scanId={scan.scanId}
+              candidate={confirmingCandidate}
+              onConfirmed={(result) => {
+                setLastImport(result);
+                setConfirmingCandidate(null);
+              }}
+              onCancel={() => setConfirmingCandidate(null)}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {/* Success Toast */}
+      {lastImport ? (
+        <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-4">
+          <div className="surface-panel flex items-center gap-3 px-4 py-3">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-emerald-500/20">
+              <Check size={16} className="text-emerald-400" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-zinc-100">
+                Added {lastImport.quantity}x {lastImport.cardName}
+              </p>
+              <p className="text-xs text-[color:var(--text-subtle)]">
+                {lastImport.setName} &middot; {lastImport.finish} &middot; {lastImport.condition}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setLastImport(null)}
+              className="ml-2 rounded-full p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-300"
+              aria-label="Dismiss"
+            >
+              &times;
+            </button>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

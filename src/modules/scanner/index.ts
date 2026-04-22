@@ -3,4 +3,5 @@ export * from "@/modules/scanner/application/preprocess-image";
 export * from "@/modules/scanner/application/scanner-pipeline-service";
 export * from "@/modules/scanner/application/services";
 export * from "@/modules/scanner/presentation/scanner-scan-view";
+export * from "@/modules/scanner/infrastructure/printing/scryfall-printing-resolver";
 
