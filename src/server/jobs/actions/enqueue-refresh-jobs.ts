@@ -2,6 +2,9 @@
 
 import { prisma } from "@/server/db/prisma";
 
+// Feature flag - set to true once database is fully migrated and Prisma regenerated
+const JOBS_ENABLED = false;
+
 /**
  * Server action to enqueue refresh jobs for a card.
  * Called when card detail page loads and data may be stale.
@@ -10,12 +13,10 @@ export async function enqueueRefreshJobs(
   cardId: string,
   printingIds: string[],
 ): Promise<void> {
-  try {
-    // Check if the job models exist on prisma client (may not be regenerated yet)
-    if (!prisma.refreshMetadata || !prisma.job) {
-      return;
-    }
+  // Skip if jobs infrastructure is not enabled
+  if (!JOBS_ENABLED) return;
 
+  try {
     // Enqueue rulings refresh if needed
     const rulingsRefresh = await prisma.refreshMetadata.findUnique({
       where: {
@@ -87,12 +88,12 @@ export async function getRefreshStatus(
   pricesStale: number; // Count of stale printings
   lastRulingsRefresh: Date | null;
 }> {
-  try {
-    // Check if the refreshMetadata model exists on prisma client
-    if (!prisma.refreshMetadata) {
-      return { rulingsStale: false, pricesStale: 0, lastRulingsRefresh: null };
-    }
+  // Skip if jobs infrastructure is not enabled
+  if (!JOBS_ENABLED) {
+    return { rulingsStale: false, pricesStale: 0, lastRulingsRefresh: null };
+  }
 
+  try {
     const rulingsRefresh = await prisma.refreshMetadata.findUnique({
       where: {
         type_entityId: {
