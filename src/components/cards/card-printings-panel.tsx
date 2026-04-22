@@ -1,6 +1,7 @@
 import type { CardPrintingRecord } from "@/modules/catalog";
 import { DetailPanel } from "@/components/cards/detail-panel";
 import { formatUsd, selectUsdPrice } from "@/modules/pricing";
+import { CardPreviewThumbnail } from "@/components/cards/card-preview";
 
 type CardPrintingsPanelProps = {
   printings: CardPrintingRecord[];
@@ -26,17 +27,13 @@ export function CardPrintingsPanel({ printings, activePrintingId, onSelectPrinti
             >
               <button
                 type="button"
-                className="h-14 w-10 overflow-hidden rounded border border-white/10 bg-zinc-900"
                 onClick={() => onSelectPrinting(printing.id)}
               >
-                {printing.imageUris.normal ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={printing.imageUris.normal}
-                    alt={`${printing.setCode} ${printing.collectorNumber}`}
-                    className="h-full w-full object-cover"
-                  />
-                ) : null}
+                <CardPreviewThumbnail
+                  artCropUri={printing.imageUris.artCrop}
+                  normalUri={printing.imageUris.normal}
+                  name={`${printing.setCode} ${printing.collectorNumber}`}
+                />
               </button>
               <div>
                 <p className="font-medium text-zinc-200">{printing.setName}</p>

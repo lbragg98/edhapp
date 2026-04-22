@@ -31,12 +31,12 @@ export function CardGalleryPanel({ card, selectedPrintingId }: CardGalleryPanelP
                 className="group overflow-hidden rounded-xl border border-[color:var(--surface-border)] bg-white/[0.02] text-left transition-colors hover:border-[color:var(--surface-border-strong)]"
                 onClick={() => setActiveImage({ src: item.src, label: item.label })}
               >
-                <div className="aspect-[4/3] bg-zinc-900">
+                <div className="aspect-[5/4] max-h-36 overflow-hidden bg-zinc-900">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={item.src}
                     alt={item.label}
-                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.02]"
+                    className="h-full w-full object-cover opacity-80 transition-all duration-300 group-hover:scale-[1.01] group-hover:opacity-95"
                   />
                 </div>
                 <p className="px-3 py-2 text-xs text-[color:var(--text-subtle)]">{item.label}</p>

@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { Layers } from "lucide-react";
 import { AppShell, SectionHeading } from "@/components/layout";
 import { DeckCreatePanel } from "@/components/decks";
+import { EmptyState } from "@/components/primitives";
 import { createDeckService } from "@/modules/deck";
 import { requirePageAppUser } from "@/server/auth";
 
@@ -26,9 +28,11 @@ export default async function DecksPage() {
           <p className="type-label">Your Decks</p>
           <div className="mt-3 space-y-2">
             {decks.length === 0 ? (
-              <p className="text-sm text-[color:var(--text-subtle)]">
-                No decks yet. Create your first list to start editing.
-              </p>
+              <EmptyState
+                icon={<Layers size={24} />}
+                title="No decks yet"
+                description="Create your first Commander deck to start building. You can source cards from your library or the full legal pool."
+              />
             ) : (
               decks.map((deck) => (
                 <Link

@@ -2,10 +2,13 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { CardSelectionItem } from "@/modules/catalog";
 import { toDeckDragCardPayload } from "@/modules/selection";
+import { EmptyState } from "@/components/primitives";
 import { PriceInline } from "@/components/pricing";
+import { CardPreviewStandard } from "@/components/cards/card-preview";
 
 type CardSelectionGridProps = {
   items: CardSelectionItem[];
+  emptyIcon?: ReactNode;
   emptyTitle: string;
   emptyDescription: string;
   getHref: (item: CardSelectionItem) => string;
@@ -22,6 +25,7 @@ function colorBadge(color: string) {
 
 export function CardSelectionGrid({
   items,
+  emptyIcon,
   emptyTitle,
   emptyDescription,
   getHref,
@@ -29,10 +33,11 @@ export function CardSelectionGrid({
 }: CardSelectionGridProps) {
   if (items.length === 0) {
     return (
-      <div className="surface-panel p-8">
-        <p className="type-title">{emptyTitle}</p>
-        <p className="type-body-muted mt-2">{emptyDescription}</p>
-      </div>
+      <EmptyState
+        icon={emptyIcon}
+        title={emptyTitle}
+        description={emptyDescription}
+      />
     );
   }
 
@@ -45,17 +50,11 @@ export function CardSelectionGrid({
           data-card-drag-payload={JSON.stringify(toDeckDragCardPayload(item.selection))}
         >
           <Link href={getHref(item)} className="block">
-          <div className="relative aspect-[4/3] bg-gradient-to-br from-zinc-900 to-zinc-800">
-            {item.imageUri ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                alt={item.title}
-                src={item.imageUri}
-                className="h-full w-full object-cover opacity-85 transition-opacity duration-300 group-hover:opacity-100"
-                loading="lazy"
-              />
-            ) : null}
-          </div>
+          <CardPreviewStandard
+            normalUri={item.imageUri}
+            name={item.title}
+            interactive
+          />
           <div className="space-y-4 p-5">
             <div>
               <h3 className="type-title">{item.title}</h3>

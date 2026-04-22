@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { Library, Search } from "lucide-react";
 import { CardSelectionGrid } from "@/components/cards";
 import { AddToLibraryControls, LibraryControls } from "@/components/library/library-controls";
 import { Stack } from "@/components/primitives";
@@ -169,8 +170,9 @@ export function LibraryWorkspace({ initialRecords }: LibraryWorkspaceProps) {
       <CardSelectionGrid
         items={libraryItems}
         getHref={(item) => `/cards/${item.selection.scryfallId}?pool=library`}
+        emptyIcon={<Library size={24} />}
         emptyTitle="Your library is empty"
-        emptyDescription="Use the add flow below to populate your collection."
+        emptyDescription="Search for cards below and add them to build your personal collection. Track owned quantities, conditions, and finishes for deckbuilding."
         renderFooter={(item) => {
           const quantity = item.selection.availableQuantity ?? 0;
           const record = records.find((entry) => entry.holdingId === item.id);
@@ -220,8 +222,9 @@ export function LibraryWorkspace({ initialRecords }: LibraryWorkspaceProps) {
       <CardSelectionGrid
         items={addItems}
         getHref={(item) => `/cards/${item.id}?pool=all`}
-        emptyTitle="Search all cards to add"
-        emptyDescription="Type at least two characters to find cards from Scryfall."
+        emptyIcon={<Search size={24} />}
+        emptyTitle="Search cards to add"
+        emptyDescription="Type at least two characters above to search the Scryfall card database."
         renderFooter={(item) => (
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-[color:var(--text-subtle)]">Add with current finish/condition settings</p>
