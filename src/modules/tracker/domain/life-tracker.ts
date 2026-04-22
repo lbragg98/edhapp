@@ -12,6 +12,9 @@ export type TrackerPlayer = {
   name: string;
   life: number;
   poison: number;
+  themeKey: string;
+  backgroundImageUri: string | null;
+  backgroundImageCardName: string | null;
   customCounters: Record<string, number>;
   commanderDamageTaken: Record<string, number>;
 };
@@ -33,6 +36,8 @@ export type TrackerAction =
   | { type: "set_player_count"; count: number }
   | { type: "set_starting_life"; life: CommanderLifePreset }
   | { type: "set_player_name"; playerId: string; name: string }
+  | { type: "set_player_theme"; playerId: string; themeKey: string }
+  | { type: "set_player_background_image"; playerId: string; imageUri: string | null; cardName: string | null }
   | { type: "adjust_life"; playerId: string; delta: number }
   | { type: "adjust_poison"; playerId: string; delta: number }
   | { type: "adjust_commander_damage"; targetPlayerId: string; sourcePlayerId: string; delta: number }
@@ -45,11 +50,14 @@ export type TrackerAction =
   | { type: "undo" }
   | { type: "hydrate"; state: TrackerGameState };
 
-const trackerPlayerSchema = z.object({
+const trackerPlayerSchema: z.ZodType<TrackerPlayer> = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   life: z.number().int(),
   poison: z.number().int(),
+  themeKey: z.string().min(1).default("graphite"),
+  backgroundImageUri: z.string().url().nullable().default(null),
+  backgroundImageCardName: z.string().min(1).nullable().default(null),
   customCounters: z.record(z.string(), z.number().int()),
   commanderDamageTaken: z.record(z.string(), z.number().int()),
 });
@@ -74,6 +82,11 @@ function buildPlayerIds(count: number): string[] {
   return Array.from({ length: count }, (_, index) => `p${index + 1}`);
 }
 
+function defaultThemeForIndex(index: number): string {
+  const fallbackThemes = ["graphite", "ocean", "forest", "crimson", "violet", "gold"];
+  return fallbackThemes[index % fallbackThemes.length] ?? fallbackThemes[0]!;
+}
+
 function createPlayerFromId(id: string, index: number, allIds: string[], life: number): TrackerPlayer {
   const commanderDamageTaken: Record<string, number> = {};
   for (const sourceId of allIds) {
@@ -87,6 +100,9 @@ function createPlayerFromId(id: string, index: number, allIds: string[], life: n
     name: `Player ${index + 1}`,
     life,
     poison: 0,
+    themeKey: defaultThemeForIndex(index),
+    backgroundImageUri: null,
+    backgroundImageCardName: null,
     customCounters: {},
     commanderDamageTaken,
   };
@@ -150,6 +166,9 @@ function remapForPlayerCount(
       name: options.resetNames ? `Player ${index + 1}` : existing.name,
       life: options.resetStats ? state.startingLife : existing.life,
       poison: options.resetStats ? 0 : existing.poison,
+      themeKey: existing.themeKey || defaultThemeForIndex(index),
+      backgroundImageUri: existing.backgroundImageUri ?? null,
+      backgroundImageCardName: existing.backgroundImageCardName ?? null,
       customCounters,
       commanderDamageTaken,
     };
@@ -200,12 +219,22 @@ function clampAtLeastZero(value: number): number {
   return Math.max(0, value);
 }
 
+function normalizeHydratedPlayer(player: z.infer<typeof trackerPlayerSchema>, index: number): TrackerPlayer {
+  return {
+    ...player,
+    themeKey: player.themeKey?.trim() || defaultThemeForIndex(index),
+    backgroundImageUri: player.backgroundImageUri ?? null,
+    backgroundImageCardName: player.backgroundImageCardName ?? null,
+  };
+}
+
 function normalizeHydratedState(input: TrackerGameState): TrackerGameState {
   const parsed = trackerGameStateSchema.parse(input);
+  const normalizedPlayers = parsed.players.map((player, index) => normalizeHydratedPlayer(player, index));
   const next = remapForPlayerCount(
     {
       ...parsed,
-      players: parsed.players,
+      players: normalizedPlayers,
     },
     parsed.playerCount,
     { resetNames: false, resetStats: false },
@@ -247,6 +276,30 @@ export function lifeTrackerReducer(state: TrackerState, action: TrackerAction): 
         updatePlayer(state.present, action.playerId, (player) => ({
           ...player,
           name,
+        })),
+      );
+    }
+    case "set_player_theme": {
+      const themeKey = action.themeKey.trim();
+      if (!themeKey) {
+        return state;
+      }
+
+      return commit(
+        state,
+        updatePlayer(state.present, action.playerId, (player) => ({
+          ...player,
+          themeKey,
+        })),
+      );
+    }
+    case "set_player_background_image": {
+      return commit(
+        state,
+        updatePlayer(state.present, action.playerId, (player) => ({
+          ...player,
+          backgroundImageUri: action.imageUri,
+          backgroundImageCardName: action.cardName,
         })),
       );
     }

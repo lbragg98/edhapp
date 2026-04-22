@@ -94,19 +94,47 @@ export async function getAppUserIdentity(): Promise<AppUserIdentity | null> {
   }
 
   try {
-    const appUser = await prisma.appUser.upsert({
-      where: { authUserId: identity.authUserId },
-      update: {
-        ...(identity.email ? { email: identity.email } : {}),
-        ...(identity.displayName ? { displayName: identity.displayName } : {}),
-      },
-      create: {
+    let appUser: { id: string };
+
+    try {
+      appUser = await prisma.appUser.upsert({
+        where: { authUserId: identity.authUserId },
+        update: {
+          ...(identity.email ? { email: identity.email } : {}),
+          ...(identity.displayName ? { displayName: identity.displayName } : {}),
+        },
+        create: {
+          authUserId: identity.authUserId,
+          email: identity.email,
+          displayName: identity.displayName,
+        },
+        select: { id: true },
+      });
+    } catch (primaryError) {
+      // Backward-compatible fallback for environments where authUserId mapping
+      // has not been migrated yet but email-based user records exist.
+      if (!identity.email) {
+        throw primaryError;
+      }
+
+      console.warn("[Auth] Falling back to email-based AppUser resolution.", {
         authUserId: identity.authUserId,
         email: identity.email,
-        displayName: identity.displayName,
-      },
-      select: { id: true },
-    });
+        error: primaryError instanceof Error ? primaryError.message : "Unknown error",
+      });
+
+      appUser = await prisma.appUser.upsert({
+        where: { email: identity.email },
+        update: {
+          ...(identity.displayName ? { displayName: identity.displayName } : {}),
+        },
+        create: {
+          email: identity.email,
+          displayName: identity.displayName,
+        },
+        select: { id: true },
+      });
+    }
 
     return {
       ...identity,

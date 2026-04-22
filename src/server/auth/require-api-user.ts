@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAppUserIdentity } from "@/server/auth/auth-user";
+import { getAppUserIdentity, getAuthIdentity } from "@/server/auth/auth-user";
 
 /**
  * Requires authenticated user for API route handlers.
@@ -22,12 +22,24 @@ import { getAppUserIdentity } from "@/server/auth/auth-user";
  * - All service/repository instantiation should use this ID for user-scoped operations.
  */
 export async function requireApiAppUser() {
+  const authIdentity = await getAuthIdentity();
+
+  if (!authIdentity) {
+    return {
+      appUser: null,
+      response: NextResponse.json({ error: "Authentication required" }, { status: 401 }),
+    };
+  }
+
   const appUser = await getAppUserIdentity();
 
   if (!appUser) {
     return {
       appUser: null,
-      response: NextResponse.json({ error: "Authentication required" }, { status: 401 }),
+      response: NextResponse.json(
+        { error: "Authenticated session found, but account provisioning is unavailable." },
+        { status: 503 },
+      ),
     };
   }
 

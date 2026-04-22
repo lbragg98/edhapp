@@ -58,4 +58,26 @@ describe("lifeTrackerReducer", () => {
     expect(reset.present.monarchPlayerId).toBeNull();
     expect(reset.present.initiativePlayerId).toBeNull();
   });
+
+  it("stores per-player appearance settings", () => {
+    const initial = createInitialTrackerState();
+    const player = initial.present.players[0];
+
+    const themed = lifeTrackerReducer(initial, {
+      type: "set_player_theme",
+      playerId: player.id,
+      themeKey: "ocean",
+    });
+
+    const withBackground = lifeTrackerReducer(themed, {
+      type: "set_player_background_image",
+      playerId: player.id,
+      imageUri: "https://cards.scryfall.io/normal/front/a/b/example.jpg",
+      cardName: "Test Card",
+    });
+
+    expect(withBackground.present.players[0].themeKey).toBe("ocean");
+    expect(withBackground.present.players[0].backgroundImageUri).toContain("scryfall.io");
+    expect(withBackground.present.players[0].backgroundImageCardName).toBe("Test Card");
+  });
 });

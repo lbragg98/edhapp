@@ -22,6 +22,13 @@ function isLibraryScopedCardsApi(pathname: string, searchParams: URLSearchParams
   return isCardsApiPath && searchParams.get("pool") === "library";
 }
 
+function hasSupabaseAuthCookies(request: NextRequest): boolean {
+  return request.cookies.getAll().some((cookie) => {
+    const name = cookie.name.toLowerCase();
+    return name.includes("auth-token") || name.startsWith("sb-access-token") || name.startsWith("sb-refresh-token");
+  });
+}
+
 export async function middleware(request: NextRequest) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -51,15 +58,35 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user: Awaited<ReturnType<typeof supabase.auth.getUser>>["data"]["user"] | null = null;
+  let authReadFailed = false;
+
+  try {
+    const {
+      data: { user: resolvedUser },
+    } = await supabase.auth.getUser();
+    user = resolvedUser;
+  } catch {
+    authReadFailed = true;
+    user = null;
+  }
 
   const pathname = request.nextUrl.pathname;
   const isProtected = isProtectedPath(pathname)
     || isLibraryScopedCardsPage(pathname, request.nextUrl.searchParams);
   const isProtectedEndpoint = isProtectedApi(pathname)
     || isLibraryScopedCardsApi(pathname, request.nextUrl.searchParams);
+  const hasAuthCookieHint = hasSupabaseAuthCookies(request);
+
+  // If auth lookup temporarily fails but auth cookies exist, let downstream
+  // server checks resolve session state to avoid false sign-in redirects.
+  if (!user && authReadFailed && hasAuthCookieHint) {
+    return response;
+  }
+
+  if (!user && hasAuthCookieHint) {
+    return response;
+  }
 
   if (!user && isProtectedEndpoint) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
