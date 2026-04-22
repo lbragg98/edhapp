@@ -2,10 +2,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import type { CardSelectionItem } from "@/modules/catalog";
 import { toDeckDragCardPayload } from "@/modules/selection";
+import { EmptyState } from "@/components/primitives";
 import { PriceInline } from "@/components/pricing";
 
 type CardSelectionGridProps = {
   items: CardSelectionItem[];
+  emptyIcon?: ReactNode;
   emptyTitle: string;
   emptyDescription: string;
   getHref: (item: CardSelectionItem) => string;
@@ -22,6 +24,7 @@ function colorBadge(color: string) {
 
 export function CardSelectionGrid({
   items,
+  emptyIcon,
   emptyTitle,
   emptyDescription,
   getHref,
@@ -29,10 +32,11 @@ export function CardSelectionGrid({
 }: CardSelectionGridProps) {
   if (items.length === 0) {
     return (
-      <div className="surface-panel p-8">
-        <p className="type-title">{emptyTitle}</p>
-        <p className="type-body-muted mt-2">{emptyDescription}</p>
-      </div>
+      <EmptyState
+        icon={emptyIcon}
+        title={emptyTitle}
+        description={emptyDescription}
+      />
     );
   }
 
