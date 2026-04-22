@@ -23,6 +23,9 @@ export async function GET(request: Request) {
   const supabase = await createSupabaseServerClient();
 
   if (!supabase) {
+    console.error("[Auth][callback] Supabase server client unavailable during callback.", {
+      nextPath,
+    });
     return NextResponse.redirect(new URL(`/auth?next=${encodeURIComponent(nextPath)}`, requestUrl.origin));
   }
 
@@ -39,11 +42,19 @@ export async function GET(request: Request) {
   }
 
   if (authError) {
+    console.error("[Auth][callback] Callback exchange failed.", {
+      nextPath,
+      authError,
+      hadCode: Boolean(code),
+      hadTokenHash: Boolean(tokenHash),
+      type,
+    });
     const authRedirect = new URL("/auth", requestUrl.origin);
     authRedirect.searchParams.set("next", nextPath);
     authRedirect.searchParams.set("error", authError);
     return NextResponse.redirect(authRedirect);
   }
 
+  console.info("[Auth][callback] Session established. Redirecting.", { nextPath });
   return NextResponse.redirect(new URL(nextPath, requestUrl.origin));
 }

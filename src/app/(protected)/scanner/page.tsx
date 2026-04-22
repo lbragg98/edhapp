@@ -1,14 +1,11 @@
-import { AppShell, SectionHeading } from "@/components/layout";
+import { SectionHeading } from "@/components/layout";
 import { ScannerWorkspace } from "@/components/scanner";
-import { requirePageAppUser } from "@/server/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function ScannerPage() {
-  await requirePageAppUser("/scanner");
-
   return (
-    <AppShell>
+    <>
       <SectionHeading
         eyebrow="Scanner Foundation"
         title="Capture cards, rank candidates by confidence, and confirm in one persistent workspace."
@@ -18,6 +15,6 @@ export default async function ScannerPage() {
       <div className="mt-8">
         <ScannerWorkspace />
       </div>
-    </AppShell>
+    </>
   );
 }

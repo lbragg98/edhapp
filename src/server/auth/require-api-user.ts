@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAppUserIdentity, getAuthIdentity } from "@/server/auth/auth-user";
+import { resolveAppUserSession } from "@/server/auth/session-resolver";
 
 /**
  * Requires authenticated user for API route handlers.
@@ -22,18 +22,14 @@ import { getAppUserIdentity, getAuthIdentity } from "@/server/auth/auth-user";
  * - All service/repository instantiation should use this ID for user-scoped operations.
  */
 export async function requireApiAppUser() {
-  const authIdentity = await getAuthIdentity();
-
-  if (!authIdentity) {
+  const session = await resolveAppUserSession({ scope: "api" });
+  if (session.status === "unauthenticated") {
     return {
       appUser: null,
       response: NextResponse.json({ error: "Authentication required" }, { status: 401 }),
     };
   }
-
-  const appUser = await getAppUserIdentity();
-
-  if (!appUser) {
+  if (session.status === "provisioning_unavailable") {
     return {
       appUser: null,
       response: NextResponse.json(
@@ -44,7 +40,7 @@ export async function requireApiAppUser() {
   }
 
   return {
-    appUser,
+    appUser: session.appUser,
     response: null,
   };
 }

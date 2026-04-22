@@ -1,20 +1,20 @@
 import Link from "next/link";
 import { Download, Layers } from "lucide-react";
-import { AppShell, SectionHeading } from "@/components/layout";
+import { SectionHeading } from "@/components/layout";
 import { DeckCreatePanel } from "@/components/decks";
 import { EmptyState } from "@/components/primitives";
 import { createDeckService } from "@/modules/deck";
-import { requirePageAppUser } from "@/server/auth";
+import { getProtectedPageAppUser } from "@/server/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function DecksPage() {
-  const appUser = await requirePageAppUser("/decks");
+  const appUser = await getProtectedPageAppUser();
   const service = createDeckService(appUser.appUserId);
   const decks = service ? await service.list() : [];
 
   return (
-    <AppShell>
+    <>
       <SectionHeading
         eyebrow="Deckbuilder"
         title="Build Commander decks from one switchable source system."
@@ -64,6 +64,6 @@ export default async function DecksPage() {
           </div>
         </section>
       </div>
-    </AppShell>
+    </>
   );
 }

@@ -52,7 +52,7 @@ export function TrackerSettingsSheet({
         </div>
 
         <div
-          className="flex-1 space-y-4 overflow-y-auto px-4 py-4 sm:px-5"
+          className="flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5"
           style={{
             paddingBottom: "max(env(safe-area-inset-bottom), 1rem)",
           }}

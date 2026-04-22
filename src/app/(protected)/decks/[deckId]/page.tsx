@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { DeckEditorWorkspace } from "@/components/decks";
-import { AppShell } from "@/components/layout";
 import { createDeckService } from "@/modules/deck";
-import { requirePageAppUser } from "@/server/auth";
+import { getProtectedPageAppUser } from "@/server/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +12,7 @@ type DeckEditorPageProps = {
 
 export default async function DeckEditorPage({ params }: DeckEditorPageProps) {
   const { deckId } = await params;
-  const appUser = await requirePageAppUser(`/decks/${deckId}`);
+  const appUser = await getProtectedPageAppUser();
   const service = createDeckService(appUser.appUserId);
 
   if (!service) {
@@ -27,7 +26,7 @@ export default async function DeckEditorPage({ params }: DeckEditorPageProps) {
   }
 
   return (
-    <AppShell>
+    <>
       <div className="mb-5">
         <Link href="/decks" className="nav-link w-fit">
           Back to Decks
@@ -40,6 +39,6 @@ export default async function DeckEditorPage({ params }: DeckEditorPageProps) {
         initialAnalytics={payload.analytics}
         initialIntelligence={payload.intelligence}
       />
-    </AppShell>
+    </>
   );
 }

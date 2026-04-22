@@ -1,10 +1,10 @@
 import Link from "next/link";
-import { AppShell, SectionHeading } from "@/components/layout";
+import { SectionHeading } from "@/components/layout";
 import { SurfacePanel } from "@/components/primitives";
 
 export default function DeckNotFound() {
   return (
-    <AppShell>
+    <>
       <SectionHeading
         eyebrow="Deckbuilder"
         title="Deck not found."
@@ -16,6 +16,6 @@ export default function DeckNotFound() {
           Return to Decks
         </Link>
       </SurfacePanel>
-    </AppShell>
+    </>
   );
 }

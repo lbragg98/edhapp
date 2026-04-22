@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { AuthPanel } from "@/components/auth";
 import { AppShell } from "@/components/layout";
-import { getAppUserIdentity } from "@/server/auth";
+import { resolveAppUserSession } from "@/server/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +20,9 @@ function parseNext(value: string | string[] | undefined): string {
 export default async function AuthPage({ searchParams }: AuthPageProps) {
   const params = await searchParams;
   const nextPath = parseNext(params.next);
-  const appUser = await getAppUserIdentity();
+  const session = await resolveAppUserSession({ scope: "page", path: "/auth" });
 
-  if (appUser) {
+  if (session.status === "authenticated") {
     redirect(nextPath);
   }
 

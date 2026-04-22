@@ -1,24 +1,13 @@
 import { redirect } from "next/navigation";
-import { getAppUserIdentity, getAuthIdentity } from "@/server/auth/auth-user";
+import { resolveAppUserSession } from "@/server/auth/session-resolver";
 
 export async function requirePageAppUser(nextPath: string) {
-  const authIdentity = await getAuthIdentity();
-
-  if (!authIdentity) {
+  const session = await resolveAppUserSession({ scope: "page", path: nextPath });
+  if (session.status === "unauthenticated") {
     redirect(`/auth?next=${encodeURIComponent(nextPath)}`);
   }
-
-  let appUser = await getAppUserIdentity();
-
-  if (!appUser) {
-    // Brief retry to reduce false negatives right after callback/session refresh.
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    appUser = await getAppUserIdentity();
+  if (session.status === "provisioning_unavailable") {
+    redirect(`/auth?next=${encodeURIComponent(nextPath)}&error=account_unavailable`);
   }
-
-  if (!appUser) {
-    throw new Error("Authenticated session found, but AppUser could not be resolved.");
-  }
-
-  return appUser;
+  return session.appUser;
 }
