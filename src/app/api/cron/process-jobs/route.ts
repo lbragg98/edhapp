@@ -4,16 +4,9 @@ import { runJobWorker } from "@/server/jobs/infrastructure/run-job-worker";
  * Cron endpoint for processing background jobs.
  * Triggered by Vercel Cron to run every 5 minutes.
  *
- * @example
- * // In vercel.json:
- * {
- *   "crons": [
- *     {
- *       "path": "/api/cron/process-jobs",
- *       "schedule": "*/5 * * * *"
- *     }
- *   ]
- * }
+ * Configure in vercel.json with:
+ *   path: /api/cron/process-jobs
+ *   schedule: every 5 minutes (standard cron syntax)
  */
 export async function GET() {
   // Verify the request is from Vercel's cron service
