@@ -31,6 +31,18 @@ export function AuthPanel() {
     return typeof raw === "string" && raw.length > 0 ? raw : null;
   }, [searchParams]);
 
+  const callbackErrorMessage = useMemo(() => {
+    if (!callbackError) {
+      return null;
+    }
+
+    if (callbackError === "account_unavailable") {
+      return "Signed in with Supabase, but app account provisioning failed. Check DATABASE_URL and Prisma migrations in production.";
+    }
+
+    return callbackError;
+  }, [callbackError]);
+
   function switchMode(newMode: AuthMode) {
     setMode(newMode);
     setError(null);
@@ -244,9 +256,9 @@ export function AuthPanel() {
           <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3.5 py-2.5 text-sm text-rose-300">
             {error}
           </p>
-        ) : callbackError ? (
+        ) : callbackErrorMessage ? (
           <p className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-3.5 py-2.5 text-sm text-rose-300">
-            {callbackError}
+            {callbackErrorMessage}
           </p>
         ) : null}
 

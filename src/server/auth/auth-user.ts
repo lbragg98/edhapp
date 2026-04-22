@@ -1,5 +1,6 @@
 import { prisma } from "@/server/db/prisma";
 import { createSupabaseServerClient } from "@/server/auth/supabase-server";
+import { hasDatabaseUrl } from "@/server/config/env";
 
 /**
  * Identity from Supabase authentication.
@@ -89,7 +90,17 @@ export async function getAuthIdentity(): Promise<AuthIdentity | null> {
 export async function getAppUserIdentity(): Promise<AppUserIdentity | null> {
   const identity = await getAuthIdentity();
 
-  if (!identity || !prisma) {
+  if (!identity) {
+    return null;
+  }
+
+  if (!prisma) {
+    console.error("[Auth] Prisma client unavailable while resolving AppUser.", {
+      authUserId: identity.authUserId,
+      email: identity.email,
+      hasDatabaseUrl,
+      nodeEnv: process.env.NODE_ENV ?? "unknown",
+    });
     return null;
   }
 
