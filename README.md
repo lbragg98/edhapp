@@ -68,6 +68,8 @@ For production deploys:
 npm run prisma:migrate:deploy
 ```
 
+`npm run build` also runs `prisma migrate deploy` before generating Prisma Client and building Next.js, so production deploys stay schema-aligned.
+
 If production already has the schema from manual SQL and no `_prisma_migrations` history yet, baseline once:
 
 ```bash

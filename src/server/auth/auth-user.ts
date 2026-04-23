@@ -1,6 +1,7 @@
 import { prisma } from "@/server/db/prisma";
 import { createSupabaseServerClient } from "@/server/auth/supabase-server";
-import { hasDatabaseUrl } from "@/server/config/env";
+import { Prisma } from "@prisma/client";
+import { hasRequiredPrismaEnv, missingPrismaEnvVars } from "@/server/config/env";
 
 /**
  * Identity from Supabase authentication.
@@ -33,6 +34,17 @@ export type AppUserResolutionFailureReason =
 export type AppUserResolutionResult =
   | { status: "resolved"; appUser: AppUserIdentity }
   | { status: "unavailable"; reason: AppUserResolutionFailureReason };
+
+function toPrismaErrorDiagnostics(error: unknown): {
+  code?: string;
+  meta?: Prisma.PrismaClientKnownRequestError["meta"];
+} {
+  if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    return { code: error.code, meta: error.meta };
+  }
+
+  return {};
+}
 
 function toDisplayName(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== "object") {
@@ -95,7 +107,8 @@ export async function resolveAppUserIdentity(authIdentity: AuthIdentity): Promis
     console.error("[Auth] Prisma client unavailable while resolving AppUser.", {
       authUserId: authIdentity.authUserId,
       email: authIdentity.email,
-      hasDatabaseUrl,
+      hasRequiredPrismaEnv,
+      missingPrismaEnvVars,
       nodeEnv: process.env.NODE_ENV ?? "unknown",
     });
     return { status: "unavailable", reason: "database_unavailable" };
@@ -119,6 +132,7 @@ export async function resolveAppUserIdentity(authIdentity: AuthIdentity): Promis
         select: { id: true },
       });
     } catch (primaryError) {
+      const primaryDiagnostics = toPrismaErrorDiagnostics(primaryError);
       // Backward-compatible fallback for environments where authUserId mapping
       // has not been migrated yet but email-based user records exist.
       if (!authIdentity.email) {
@@ -129,19 +143,35 @@ export async function resolveAppUserIdentity(authIdentity: AuthIdentity): Promis
         authUserId: authIdentity.authUserId,
         email: authIdentity.email,
         error: primaryError instanceof Error ? primaryError.message : "Unknown error",
+        prismaCode: primaryDiagnostics.code ?? null,
+        prismaMeta: primaryDiagnostics.meta ?? null,
       });
 
-      appUser = await prisma.appUser.upsert({
-        where: { email: authIdentity.email },
-        update: {
-          ...(authIdentity.displayName ? { displayName: authIdentity.displayName } : {}),
-        },
-        create: {
+      try {
+        appUser = await prisma.appUser.upsert({
+          where: { email: authIdentity.email },
+          update: {
+            authUserId: authIdentity.authUserId,
+            ...(authIdentity.displayName ? { displayName: authIdentity.displayName } : {}),
+          },
+          create: {
+            authUserId: authIdentity.authUserId,
+            email: authIdentity.email,
+            displayName: authIdentity.displayName,
+          },
+          select: { id: true },
+        });
+      } catch (secondaryError) {
+        const secondaryDiagnostics = toPrismaErrorDiagnostics(secondaryError);
+        console.error("[Auth] Email fallback upsert failed while resolving AppUser identity.", {
+          authUserId: authIdentity.authUserId,
           email: authIdentity.email,
-          displayName: authIdentity.displayName,
-        },
-        select: { id: true },
-      });
+          error: secondaryError instanceof Error ? secondaryError.message : "Unknown error",
+          prismaCode: secondaryDiagnostics.code ?? null,
+          prismaMeta: secondaryDiagnostics.meta ?? null,
+        });
+        throw secondaryError;
+      }
     }
 
     return {
@@ -152,10 +182,13 @@ export async function resolveAppUserIdentity(authIdentity: AuthIdentity): Promis
       },
     };
   } catch (error) {
+    const diagnostics = toPrismaErrorDiagnostics(error);
     console.error("[Auth] Failed to resolve AppUser identity.", {
       authUserId: authIdentity.authUserId,
       email: authIdentity.email,
       error: error instanceof Error ? error.message : "Unknown error",
+      prismaCode: diagnostics.code ?? null,
+      prismaMeta: diagnostics.meta ?? null,
     });
     return { status: "unavailable", reason: "app_user_resolution_failed" };
   }

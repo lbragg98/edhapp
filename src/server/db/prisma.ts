@@ -1,12 +1,15 @@
 import { PrismaClient } from "@prisma/client";
-import { hasDatabaseUrl } from "@/server/config/env";
+import { hasRequiredPrismaEnv, missingPrismaEnvVars } from "@/server/config/env";
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
 function createPrismaClient(): PrismaClient | null {
-  if (!hasDatabaseUrl) {
+  if (!hasRequiredPrismaEnv) {
+    console.error("[DB] Prisma client initialization skipped. Missing required env vars.", {
+      missing: missingPrismaEnvVars,
+    });
     return null;
   }
 
