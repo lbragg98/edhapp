@@ -130,7 +130,21 @@ export function AuthPanel() {
           return;
         }
 
-        setMessage("Account created. Check your email and confirm in this same browser.");
+        // If email confirmation is disabled in Supabase, signUp should usually
+        // return a session. If it doesn't, attempt a direct password sign-in
+        // so the UX stays immediate and doesn't depend on email confirmation.
+        const { error: signInAfterSignUpError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+
+        if (!signInAfterSignUpError) {
+          setMessage("Account created and signed in.");
+          navigateToSignedInDestination(next);
+          return;
+        }
+
+        setError(signInAfterSignUpError.message);
         return;
       }
 
