@@ -1,59 +1,37 @@
 import { NextResponse } from "next/server";
-import { z } from "zod";
-import { DeckSourceService, toDeckSourceResultView } from "@/modules/deckbuilder";
-import { parseCardColorCsv } from "@/modules/catalog";
+import {
+  DeckSourceService,
+  normalizeDeckSourceParams,
+  toDeckSourceResultView,
+} from "@/modules/deckbuilder";
 import { requireApiAppUser } from "@/server/auth";
-
-const querySchema = z.object({
-  mode: z.enum(["all", "library"]),
-  query: z.string().optional(),
-  colors: z.string().optional(),
-  typeLine: z.string().optional(),
-  commanderOnly: z.enum(["true", "false"]).optional(),
-  limit: z.coerce.number().int().min(1).max(36).optional(),
-});
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
-
-  const parsed = querySchema.safeParse({
+  const normalized = normalizeDeckSourceParams({
     mode: url.searchParams.get("mode") ?? undefined,
     query: url.searchParams.get("query") ?? undefined,
     colors: url.searchParams.get("colors") ?? undefined,
     typeLine: url.searchParams.get("typeLine") ?? undefined,
     commanderOnly: url.searchParams.get("commanderOnly") ?? undefined,
     limit: url.searchParams.get("limit") ?? undefined,
-  });
+  }, "api_deckbuilder_source_query");
 
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
-  }
-
-  const auth = parsed.data.mode === "library" ? await requireApiAppUser() : { appUser: null, response: null };
+  const auth = normalized.mode === "library" ? await requireApiAppUser() : { appUser: null, response: null };
   if (auth.response) {
     return auth.response;
   }
 
   const service = new DeckSourceService(auth.appUser?.appUserId);
-  const colors = parseCardColorCsv(parsed.data.colors, "api_deckbuilder_source_query");
   try {
-    const payload = await service.execute({
-      mode: parsed.data.mode,
-      ...(parsed.data.query ? { query: parsed.data.query } : {}),
-      ...(colors ? { colors } : {}),
-      ...(parsed.data.typeLine ? { typeLine: parsed.data.typeLine } : {}),
-      ...(parsed.data.commanderOnly !== undefined
-        ? { commanderOnly: parsed.data.commanderOnly === "true" }
-        : {}),
-      ...(parsed.data.limit !== undefined ? { limit: parsed.data.limit } : {}),
-    });
+    const payload = await service.execute(normalized);
 
     return NextResponse.json({ data: toDeckSourceResultView(payload) });
   } catch (error) {
     console.error("[Filters][deckbuilder-source] Failed to apply filters.", {
-      query: parsed.data,
+      query: normalized,
       error: error instanceof Error ? error.message : "Unknown error",
     });
-    return NextResponse.json({ error: "Unable to apply source filters" }, { status: 400 });
+    return NextResponse.json({ data: { mode: normalized.mode, items: [] } });
   }
 }

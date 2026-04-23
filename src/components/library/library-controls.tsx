@@ -27,6 +27,7 @@ export function LibraryControls({
         <input
           value={query}
           onChange={(event) => onQueryChange(event.target.value)}
+          maxLength={240}
           placeholder="Search owned cards"
           className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
         />
@@ -102,6 +103,7 @@ export function AddToLibraryControls({
           <input
             value={addQuery}
             onChange={(event) => onAddQueryChange(event.target.value)}
+            maxLength={240}
             placeholder="Search all cards"
             className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
           />
@@ -155,6 +157,7 @@ export function AddToLibraryControls({
         <input
           value={note}
           onChange={(event) => onNoteChange(event.target.value)}
+          maxLength={250}
           placeholder="Binder page, signed copy, acquisition context"
           className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
         />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DeckIntelligenceReport,
   DeckPlaytestReport,
@@ -16,6 +16,7 @@ import { estimateValuation } from "@/modules/pricing";
 import { PriceInline, ValueEstimateChip } from "@/components/pricing";
 import { CardPreviewThumbnail } from "@/components/cards/card-preview";
 import { parseDeckSourceResultResponse } from "@/modules/deckbuilder";
+import { normalizeSearchText } from "@/modules/search";
 
 type CardColor = "W" | "U" | "B" | "R" | "G";
 const TYPE_FILTERS = ["Any", "Land", "Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker"] as const;
@@ -37,6 +38,17 @@ type DeckEditorWorkspaceProps = {
   initialIntelligence: DeckIntelligenceReport;
 };
 type WorkspaceView = "deckbuilder" | "analytics" | "playtest" | "upgrades";
+
+function useDebouncedValue<T>(value: T, delay: number): T {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setDebouncedValue(value), delay);
+    return () => window.clearTimeout(timeout);
+  }, [value, delay]);
+
+  return debouncedValue;
+}
 
 function parseApproximateCmc(manaCost: string | null): number {
   if (!manaCost) return 0;
@@ -196,6 +208,16 @@ export function DeckEditorWorkspace({
   const [isDraggingMainboard, setIsDraggingMainboard] = useState(false);
   const [reviewTab, setReviewTab] = useState<"analytics" | "validation" | "guidance" | "playtest">("analytics");
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("deckbuilder");
+  const sourceRequestSequenceRef = useRef(0);
+  const debouncedSourceSearch = useDebouncedValue(search, 180);
+  const normalizedSourceSearch = useMemo(
+    () => normalizeSearchText(debouncedSourceSearch, { maxLength: 120, unicodeForm: "NFKC" }),
+    [debouncedSourceSearch],
+  );
+  const normalizedDeckSearch = useMemo(
+    () => normalizeSearchText(deckSearch, { maxLength: 120, unicodeForm: "NFKC" }).toLowerCase(),
+    [deckSearch],
+  );
 
   const commanderEntries = useMemo(
     () => deck.cards.filter((entry) => entry.zone === "commander"),
@@ -227,9 +249,9 @@ export function DeckEditorWorkspace({
             { typeLine: entry.typeLine, manaCost: entry.manaCost, colorIdentity: entry.colorIdentity },
             deckFilters,
           ) &&
-          entry.name.toLowerCase().includes(deckSearch.toLowerCase()),
+          entry.name.toLowerCase().includes(normalizedDeckSearch),
       ),
-    [commanderEntries, deckFilters, deckSearch],
+    [commanderEntries, deckFilters, normalizedDeckSearch],
   );
   const filteredMainboardEntries = useMemo(
     () =>
@@ -239,9 +261,9 @@ export function DeckEditorWorkspace({
             { typeLine: entry.typeLine, manaCost: entry.manaCost, colorIdentity: entry.colorIdentity },
             deckFilters,
           ) &&
-          entry.name.toLowerCase().includes(deckSearch.toLowerCase()),
+          entry.name.toLowerCase().includes(normalizedDeckSearch),
       ),
-    [mainboardEntries, deckFilters, deckSearch],
+    [mainboardEntries, deckFilters, normalizedDeckSearch],
   );
   const deckValueEstimate = useMemo(
     () =>
@@ -256,32 +278,43 @@ export function DeckEditorWorkspace({
   );
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      const params = new URLSearchParams({
-        mode: sourceMode,
-        query: search,
-        limit: "20",
-        commanderOnly: "false",
+    const controller = new AbortController();
+    const requestSequence = ++sourceRequestSequenceRef.current;
+
+    const params = new URLSearchParams({
+      mode: sourceMode,
+      query: normalizedSourceSearch,
+      limit: "20",
+      commanderOnly: "false",
+    });
+
+    fetch(`/api/deckbuilder/source?${params.toString()}`, { signal: controller.signal })
+      .then((response) => response.json())
+      .then((payload) => {
+        const parsed = parseDeckSourceResultResponse(payload, "deck_editor_source_panel");
+        if (requestSequence !== sourceRequestSequenceRef.current) {
+          return;
+        }
+
+        if (!parsed) {
+          setSourceItems([]);
+          return;
+        }
+
+        setSourceItems(parsed.items);
+      })
+      .catch((error) => {
+        if ((error as { name?: string } | undefined)?.name === "AbortError") {
+          return;
+        }
+
+        if (requestSequence === sourceRequestSequenceRef.current) {
+          setSourceItems([]);
+        }
       });
 
-      fetch(`/api/deckbuilder/source?${params.toString()}`)
-        .then((response) => response.json())
-        .then((payload) => {
-          const parsed = parseDeckSourceResultResponse(payload, "deck_editor_source_panel");
-          if (!parsed) {
-            setSourceItems([]);
-            return;
-          }
-
-          setSourceItems(parsed.items);
-        })
-        .catch(() => {
-          setSourceItems([]);
-        });
-    }, 160);
-
-    return () => window.clearTimeout(timeout);
-  }, [sourceMode, search]);
+    return () => controller.abort();
+  }, [sourceMode, normalizedSourceSearch]);
 
   async function syncDeckFromResponse(response: Response) {
     if (!response.ok) {
@@ -557,6 +590,7 @@ export function DeckEditorWorkspace({
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
+                  maxLength={240}
                   placeholder="Search cards"
                   className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
                 />
@@ -573,11 +607,14 @@ export function DeckEditorWorkspace({
                   placeholder="Max CMC"
                   type="number"
                   min={0}
+                  max={20}
                   value={sourceFilters.maxCmc ?? ""}
                   onChange={(event) =>
                     setSourceFilters((current) => ({
                       ...current,
-                      maxCmc: event.target.value ? Number(event.target.value) : null,
+                      maxCmc: event.target.value
+                        ? Math.max(0, Math.min(20, Number(event.target.value) || 0))
+                        : null,
                     }))
                   }
                   className="rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-xs text-zinc-100 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
@@ -687,6 +724,7 @@ export function DeckEditorWorkspace({
                   <input
                     value={deckSearch}
                     onChange={(event) => setDeckSearch(event.target.value)}
+                    maxLength={240}
                     placeholder="Search deck"
                     className="w-36 rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-xs text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
                   />
@@ -707,11 +745,14 @@ export function DeckEditorWorkspace({
                   placeholder="Max CMC"
                   type="number"
                   min={0}
+                  max={20}
                   value={deckFilters.maxCmc ?? ""}
                   onChange={(event) =>
                     setDeckFilters((current) => ({
                       ...current,
-                      maxCmc: event.target.value ? Number(event.target.value) : null,
+                      maxCmc: event.target.value
+                        ? Math.max(0, Math.min(20, Number(event.target.value) || 0))
+                        : null,
                     }))
                   }
                   className="rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-xs text-zinc-100 focus:border-[color:var(--surface-border-strong)] focus:outline-none"

@@ -3,6 +3,7 @@ import { createSearchCardsService, toCardSelectionItems } from "@/modules/catalo
 import { createListLibraryCardsService, toLibrarySelectionItems } from "@/modules/library";
 import type { SearchCardsService } from "@/modules/catalog";
 import type { ListLibraryCardsService } from "@/modules/library";
+import { normalizeDeckSourceParams } from "@/modules/deckbuilder/application/deck-source-params";
 
 export class DeckSourceService {
   private readonly cardService: SearchCardsService;
@@ -15,30 +16,42 @@ export class DeckSourceService {
   }
 
   async execute(input: DeckSourceQuery): Promise<DeckSourceResult> {
-    if (input.mode === "library") {
+    const normalized = normalizeDeckSourceParams(
+      {
+        mode: input.mode,
+        query: input.query ?? null,
+        colors: input.colors ?? null,
+        typeLine: input.typeLine ?? null,
+        commanderOnly: input.commanderOnly === undefined ? null : String(input.commanderOnly),
+        limit: input.limit === undefined ? null : String(input.limit),
+      },
+      "deck_source_service",
+    );
+
+    if (normalized.mode === "library") {
       if (!this.libraryService) {
         return { mode: "library", items: [] };
       }
 
       const records = await this.libraryService.execute({
-        ...(input.query ? { query: input.query } : {}),
-        ...(input.colors ? { colors: input.colors } : {}),
-        pageSize: input.limit ?? 18,
+        ...(normalized.query ? { query: normalized.query } : {}),
+        ...(normalized.colors.length > 0 ? { colors: normalized.colors } : {}),
+        pageSize: normalized.limit,
       });
 
       return {
         mode: "library",
-      items: toLibrarySelectionItems(records).map((item) => item.selection),
+        items: toLibrarySelectionItems(records).map((item) => item.selection),
       };
     }
 
     const result = await this.cardService.execute({
-      ...(input.query ? { query: input.query } : {}),
-      ...(input.colors ? { colors: input.colors } : {}),
-      ...(input.typeLine ? { typeLine: input.typeLine } : {}),
-      commanderOnly: input.commanderOnly ?? true,
+      ...(normalized.query ? { query: normalized.query } : {}),
+      ...(normalized.colors.length > 0 ? { colors: normalized.colors } : {}),
+      ...(normalized.typeLine ? { typeLine: normalized.typeLine } : {}),
+      commanderOnly: normalized.commanderOnly,
       pool: "all",
-      pageSize: input.limit ?? 18,
+      pageSize: normalized.limit,
       sort: "relevance",
     });
 

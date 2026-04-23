@@ -6,6 +6,7 @@ import {
   type CardSearchInput,
   type NormalizedCardSearchInput,
 } from "@/modules/catalog/domain/card-record";
+import { normalizeSearchText } from "@/modules/search";
 
 const cardColorSchema = z.enum(CARD_COLORS);
 
@@ -24,9 +25,13 @@ export function normalizeCardSearchInput(input: CardSearchInput): NormalizedCard
   const parsed = cardSearchInputSchema.parse(input);
 
   return {
-    query: parsed.query ?? "",
+    query: parsed.query
+      ? normalizeSearchText(parsed.query, { maxLength: 120, unicodeForm: "NFKC" })
+      : "",
     colors: [...new Set(parsed.colors ?? [])],
-    typeLine: parsed.typeLine ?? "",
+    typeLine: parsed.typeLine
+      ? normalizeSearchText(parsed.typeLine, { maxLength: 60, unicodeForm: "NFKC" })
+      : "",
     commanderOnly: parsed.commanderOnly ?? true,
     pool: parsed.pool ?? "all",
     sort: parsed.sort ?? "relevance",

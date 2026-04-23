@@ -11,5 +11,14 @@ export default async function ProtectedLayout({ children }: ProtectedLayoutProps
   const appUser = await requireProtectedPageSession();
   console.info("[Auth][protected-layout] Session validated.", { appUserId: appUser.appUserId });
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <AppShell
+      authContext={{
+        isAuthenticated: true,
+        viewerLabel: appUser.email ?? appUser.displayName ?? null,
+      }}
+    >
+      {children}
+    </AppShell>
+  );
 }

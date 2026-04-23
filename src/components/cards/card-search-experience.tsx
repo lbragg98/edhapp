@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { CardSearchControls } from "@/components/cards/card-search-controls";
 import { CardSelectionGrid } from "@/components/cards/card-selection-grid";
 import { Stack } from "@/components/primitives";
 import type { CardSearchResult } from "@/modules/catalog";
-import { parseCardSearchResultResponse, toCardSelectionItems } from "@/modules/catalog";
+import {
+  normalizeCardSearchParams,
+  parseCardSearchResultResponse,
+  toCardSelectionItems,
+} from "@/modules/catalog";
 
 type CardSearchExperienceProps = {
   initialResult: CardSearchResult;
@@ -47,6 +51,7 @@ export function CardSearchExperience({
   const [colors, setColors] = useState<string[]>(initialColors);
   const [result, setResult] = useState<CardSearchResult>(initialResult);
   const [isLoading, setIsLoading] = useState(false);
+  const requestSequenceRef = useRef(0);
 
   const debouncedQuery = useDebouncedValue(query, 180);
   const debouncedTypeLine = useDebouncedValue(typeLine, 180);
@@ -57,14 +62,19 @@ export function CardSearchExperience({
   const searchParams = useSearchParams();
 
   const paramsForRequest = useMemo(
-    () => ({
-      query: debouncedQuery,
-      typeLine: debouncedTypeLine,
-      commanderOnly,
-      sort,
-      pool,
-      colors: debouncedColors,
-    }),
+    () =>
+      normalizeCardSearchParams(
+        {
+          query: debouncedQuery,
+          typeLine: debouncedTypeLine,
+          commanderOnly: String(commanderOnly),
+          sort,
+          pool,
+          colors: debouncedColors,
+        },
+        "card_search_experience",
+        { defaultCommanderOnly: true, defaultPool: "all", defaultSort: "relevance", defaultPage: 1, defaultPageSize: 18 },
+      ),
     [debouncedQuery, debouncedTypeLine, commanderOnly, sort, pool, debouncedColors],
   );
 
@@ -84,11 +94,15 @@ export function CardSearchExperience({
     if (paramsForRequest.colors.length > 0) params.set("colors", paramsForRequest.colors.join(","));
     else params.delete("colors");
 
-    router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+    const nextQueryString = params.toString();
+    if (nextQueryString !== searchParams.toString()) {
+      router.replace(`${pathname}?${nextQueryString}`, { scroll: false });
+    }
   }, [paramsForRequest, pathname, router, searchParams]);
 
   useEffect(() => {
     const controller = new AbortController();
+    const requestSequence = ++requestSequenceRef.current;
 
     async function run() {
       setIsLoading(true);
@@ -99,7 +113,7 @@ export function CardSearchExperience({
       requestParams.set("commanderOnly", String(paramsForRequest.commanderOnly));
       requestParams.set("sort", paramsForRequest.sort);
       requestParams.set("pool", paramsForRequest.pool);
-      requestParams.set("pageSize", "18");
+      requestParams.set("pageSize", String(paramsForRequest.pageSize));
       if (paramsForRequest.colors.length > 0) {
         requestParams.set("colors", paramsForRequest.colors.join(","));
       }
@@ -109,6 +123,9 @@ export function CardSearchExperience({
       });
 
       if (!response.ok) {
+        if (requestSequence !== requestSequenceRef.current) {
+          return;
+        }
         setIsLoading(false);
         return;
       }
@@ -116,16 +133,27 @@ export function CardSearchExperience({
       const payload = await response.json();
       const parsed = parseCardSearchResultResponse(payload, "card_search_experience");
       if (!parsed) {
+        if (requestSequence !== requestSequenceRef.current) {
+          return;
+        }
         setIsLoading(false);
         return;
       }
 
-      setResult(parsed);
-      setIsLoading(false);
+      if (requestSequence === requestSequenceRef.current) {
+        setResult(parsed);
+        setIsLoading(false);
+      }
     }
 
-    run().catch(() => {
-      setIsLoading(false);
+    run().catch((error) => {
+      if ((error as { name?: string } | undefined)?.name === "AbortError") {
+        return;
+      }
+
+      if (requestSequence === requestSequenceRef.current) {
+        setIsLoading(false);
+      }
     });
 
     return () => controller.abort();

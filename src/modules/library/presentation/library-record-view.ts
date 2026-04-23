@@ -39,3 +39,34 @@ export const libraryRecordListViewSchema = z.array(libraryRecordViewSchema);
 export function toLibraryRecordListView(records: LibraryRecord[]) {
   return libraryRecordListViewSchema.parse(records);
 }
+
+export function parseLibraryRecordListResponse(
+  payload: unknown,
+  context: string,
+): LibraryRecord[] | null {
+  const envelope = z.object({ data: z.array(z.unknown()) }).safeParse(payload);
+  if (!envelope.success) {
+    console.warn("[Filters][library] Invalid library API payload envelope.", {
+      context,
+      issues: envelope.error.issues,
+    });
+    return null;
+  }
+
+  const items: LibraryRecord[] = [];
+  envelope.data.data.forEach((entry, index) => {
+    const parsed = libraryRecordViewSchema.safeParse(entry);
+    if (!parsed.success) {
+      console.warn("[Filters][library] Skipped malformed library record.", {
+        context,
+        index,
+        issues: parsed.error.issues,
+      });
+      return;
+    }
+
+    items.push(parsed.data);
+  });
+
+  return items;
+}

@@ -5,18 +5,10 @@ import {
   COLLECTION_FINISHES,
   createAddLibraryCardService,
   createListLibraryCardsService,
+  normalizeLibrarySearchParams,
   toLibraryRecordListView,
 } from "@/modules/library";
-import { parseCardColorCsv } from "@/modules/catalog";
 import { requireApiAppUser } from "@/server/auth";
-
-const querySchema = z.object({
-  query: z.string().optional(),
-  colors: z.string().optional(),
-  finish: z.enum(COLLECTION_FINISHES).optional(),
-  condition: z.enum(COLLECTION_CONDITIONS).optional(),
-  pageSize: z.coerce.number().int().min(1).max(60).optional(),
-});
 
 const addBodySchema = z.object({
   scryfallCardId: z.string().trim().min(1),
@@ -33,37 +25,32 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const parsed = querySchema.safeParse({
+  const normalized = normalizeLibrarySearchParams({
     query: url.searchParams.get("query") ?? undefined,
     colors: url.searchParams.get("colors") ?? undefined,
     finish: url.searchParams.get("finish") ?? undefined,
     condition: url.searchParams.get("condition") ?? undefined,
     pageSize: url.searchParams.get("pageSize") ?? undefined,
-  });
-
-  if (!parsed.success) {
-    return NextResponse.json({ error: "Invalid query parameters" }, { status: 400 });
-  }
+  }, "api_library_query");
 
   const service = createListLibraryCardsService(auth.appUser.appUserId);
-  const colors = parseCardColorCsv(parsed.data.colors, "api_library_query");
 
   try {
     const records = await service.execute({
-      ...(parsed.data.query ? { query: parsed.data.query } : {}),
-      ...(colors ? { colors } : {}),
-      ...(parsed.data.finish ? { finish: parsed.data.finish } : {}),
-      ...(parsed.data.condition ? { condition: parsed.data.condition } : {}),
-      ...(parsed.data.pageSize !== undefined ? { pageSize: parsed.data.pageSize } : {}),
+      ...(normalized.query ? { query: normalized.query } : {}),
+      ...(normalized.colors.length > 0 ? { colors: normalized.colors } : {}),
+      ...(normalized.finish ? { finish: normalized.finish } : {}),
+      ...(normalized.condition ? { condition: normalized.condition } : {}),
+      pageSize: normalized.pageSize,
     });
 
     return NextResponse.json({ data: toLibraryRecordListView(records) });
   } catch (error) {
     console.error("[Filters][library] Failed to apply filters.", {
-      query: parsed.data,
+      query: normalized,
       error: error instanceof Error ? error.message : "Unknown error",
     });
-    return NextResponse.json({ error: "Unable to apply library filters" }, { status: 400 });
+    return NextResponse.json({ data: [] });
   }
 }
 

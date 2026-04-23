@@ -6,6 +6,7 @@ import {
   type LibrarySearchInput,
   type NormalizedLibrarySearchInput,
 } from "@/modules/library/domain/library-record";
+import { normalizeSearchText } from "@/modules/search";
 
 const colorSchema = z.enum(CARD_COLORS);
 
@@ -21,7 +22,9 @@ export function normalizeLibrarySearchInput(input: LibrarySearchInput): Normaliz
   const parsed = librarySearchInputSchema.parse(input);
 
   return {
-    query: parsed.query ?? "",
+    query: parsed.query
+      ? normalizeSearchText(parsed.query, { maxLength: 120, unicodeForm: "NFKC" })
+      : "",
     colors: [...new Set(parsed.colors ?? [])],
     finish: parsed.finish ?? null,
     condition: parsed.condition ?? null,

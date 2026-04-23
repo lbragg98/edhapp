@@ -15,10 +15,12 @@ export function parseCardColorCsv(
     return undefined;
   }
 
-  const tokens = raw
+  const boundedRaw = raw.slice(0, 120);
+  const tokens = boundedRaw
     .split(",")
     .map((entry) => entry.trim().toUpperCase())
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 8);
 
   const accepted: CardColor[] = [];
   const rejected: string[] = [];
@@ -33,7 +35,7 @@ export function parseCardColorCsv(
   }
 
   if (rejected.length > 0) {
-    console.warn("[Filters] Ignored invalid color values.", { context, raw, rejected });
+    console.warn("[Filters] Ignored invalid color values.", { context, raw: boundedRaw, rejected });
   }
 
   if (accepted.length === 0) {
@@ -47,6 +49,11 @@ export function parseCardColorsFromParam(
   raw: string | string[] | undefined,
   context: string,
 ): CardColor[] {
+  if (Array.isArray(raw)) {
+    const merged = raw.filter((entry): entry is string => typeof entry === "string").join(",");
+    return parseCardColorCsv(merged, context) ?? [];
+  }
+
   if (typeof raw !== "string") {
     return [];
   }

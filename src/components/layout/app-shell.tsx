@@ -5,10 +5,21 @@ import { getAuthIdentity } from "@/server/auth";
 
 type AppShellProps = {
   children: ReactNode;
+  authContext?: {
+    isAuthenticated: boolean;
+    viewerLabel: string | null;
+  };
 };
 
-export async function AppShell({ children }: AppShellProps) {
-  const identity = await getAuthIdentity();
+export async function AppShell({ children, authContext }: AppShellProps) {
+  const identity = authContext
+    ? null
+    : await getAuthIdentity();
+
+  const isAuthenticated = authContext ? authContext.isAuthenticated : Boolean(identity);
+  const viewerLabel = authContext
+    ? authContext.viewerLabel
+    : (identity?.email ?? identity?.displayName ?? null);
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-[image:var(--app-bg)] text-foreground">
@@ -19,8 +30,8 @@ export async function AppShell({ children }: AppShellProps) {
 
       <PageContainer className="relative pb-16 pt-6 sm:pt-8">
         <TopNav
-          isAuthenticated={Boolean(identity)}
-          viewerLabel={identity?.email ?? identity?.displayName ?? null}
+          isAuthenticated={isAuthenticated}
+          viewerLabel={viewerLabel}
         />
         <main>{children}</main>
       </PageContainer>

@@ -11,8 +11,9 @@ describe("card-color-filter", () => {
     warn.mockRestore();
   });
 
-  it("returns empty list for non-string page params", () => {
+  it("handles array and missing param inputs safely", () => {
     expect(parseCardColorsFromParam(undefined, "test_case")).toEqual([]);
-    expect(parseCardColorsFromParam(["W"], "test_case")).toEqual([]);
+    expect(parseCardColorsFromParam(["W"], "test_case")).toEqual(["W"]);
+    expect(parseCardColorsFromParam(["W", "X", "G"], "test_case")).toEqual(["W", "G"]);
   });
 });

@@ -41,6 +41,7 @@ export function CardSearchControls({
           <input
             value={query}
             onChange={(event) => onQueryChange(event.target.value)}
+            maxLength={240}
             placeholder="Search name, text, or mechanic"
             className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
           />
@@ -65,6 +66,7 @@ export function CardSearchControls({
           <input
             value={typeLine}
             onChange={(event) => onTypeLineChange(event.target.value)}
+            maxLength={120}
             placeholder="Creature, Instant..."
             className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
           />

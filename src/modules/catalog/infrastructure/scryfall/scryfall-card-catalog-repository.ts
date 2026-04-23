@@ -22,11 +22,34 @@ import {
 
 const SCRYFALL_API_BASE = "https://api.scryfall.com";
 
-function buildSearchExpression(input: NormalizedCardSearchInput): string {
+class ScryfallRequestError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+function escapeScryfallQuotedValue(value: string): string {
+  return value
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"');
+}
+
+function buildSearchExpression(
+  input: NormalizedCardSearchInput,
+  options?: { escapeTextTerms?: boolean },
+): string {
   const terms: string[] = ["game:paper"];
+  const escapeTextTerms = options?.escapeTextTerms ?? false;
 
   if (input.query) {
-    terms.push(input.query);
+    terms.push(
+      escapeTextTerms
+        ? `"${escapeScryfallQuotedValue(input.query)}"`
+        : input.query,
+    );
   }
 
   if (input.commanderOnly) {
@@ -34,7 +57,11 @@ function buildSearchExpression(input: NormalizedCardSearchInput): string {
   }
 
   if (input.typeLine) {
-    terms.push(`t:${input.typeLine}`);
+    terms.push(
+      escapeTextTerms
+        ? `t:"${escapeScryfallQuotedValue(input.typeLine)}"`
+        : `t:${input.typeLine}`,
+    );
   }
 
   if (input.colors.length > 0) {
@@ -73,10 +100,10 @@ async function fetchScryfallJson<T>(url: string, schema: { parse: (input: unknow
     const parsedError = scryfallErrorResponseSchema.safeParse(json);
 
     if (parsedError.success) {
-      throw new Error(parsedError.data.details);
+      throw new ScryfallRequestError(parsedError.data.details, response.status);
     }
 
-    throw new Error("Scryfall request failed");
+    throw new ScryfallRequestError("Scryfall request failed", response.status);
   }
 
   return schema.parse(json);
@@ -85,15 +112,40 @@ async function fetchScryfallJson<T>(url: string, schema: { parse: (input: unknow
 export class ScryfallCardCatalogRepository implements CardCatalogRepository {
   async search(input: NormalizedCardSearchInput): Promise<CardSearchResult> {
     const url = new URL(`${SCRYFALL_API_BASE}/cards/search`);
-    url.searchParams.set("q", buildSearchExpression(input));
     url.searchParams.set("unique", "cards");
     url.searchParams.set("order", searchOrder(input.sort));
     url.searchParams.set("dir", "auto");
     url.searchParams.set("include_extras", "false");
     url.searchParams.set("include_multilingual", "false");
     url.searchParams.set("page", String(input.page));
+    const baseSearchUrl = url.toString();
 
-    const parsed = await fetchScryfallJson(url.toString(), scryfallRawSearchResponseSchema);
+    async function fetchSearch(expression: string) {
+      const searchUrl = new URL(baseSearchUrl);
+      searchUrl.searchParams.set("q", expression);
+      return fetchScryfallJson(searchUrl.toString(), scryfallRawSearchResponseSchema);
+    }
+
+    let parsed;
+    try {
+      parsed = await fetchSearch(buildSearchExpression(input));
+    } catch (error) {
+      const shouldRetryWithEscapedText =
+        (input.query.length > 0 || input.typeLine.length > 0) &&
+        error instanceof ScryfallRequestError &&
+        error.status === 400;
+
+      if (!shouldRetryWithEscapedText) {
+        throw error;
+      }
+
+      console.warn("[ScryfallCatalog] Retrying search with escaped text terms.", {
+        status: error.status,
+        message: error.message,
+      });
+
+      parsed = await fetchSearch(buildSearchExpression(input, { escapeTextTerms: true }));
+    }
     const items: CardSearchResult["items"] = [];
     const skipped: Array<{ id?: string; reason: string }> = [];
 

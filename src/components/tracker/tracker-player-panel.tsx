@@ -22,6 +22,8 @@ import { cn } from "@/lib/utils";
 import { resolveScryfallArtFocusedUri } from "@/lib/scryfall-art";
 import { resolveTrackerTheme, TRACKER_PLAYER_THEMES } from "@/components/tracker/tracker-player-theme";
 import { ArtBackgroundLayer } from "@/components/primitives";
+import { parseCardSearchResultResponse } from "@/modules/catalog";
+import { normalizeSearchText } from "@/modules/search";
 
 type TrackerImageCandidate = {
   id: string;
@@ -110,11 +112,15 @@ function PlayerSettingsPanel({
   const [isSearching, setIsSearching] = useState(false);
   const [isApplyingCandidateId, setIsApplyingCandidateId] = useState<string | null>(null);
   const debouncedImageQuery = useDebouncedValue(imageQuery, 220);
+  const normalizedImageQuery = normalizeSearchText(debouncedImageQuery, {
+    maxLength: 120,
+    unicodeForm: "NFKC",
+  });
   const activeTheme = resolveTrackerTheme(player.themeKey, styleIndex);
-  const visibleImageCandidates = debouncedImageQuery.trim().length < 2 ? [] : imageCandidates;
+  const visibleImageCandidates = normalizedImageQuery.trim().length < 2 ? [] : imageCandidates;
 
   useEffect(() => {
-    if (!debouncedImageQuery || debouncedImageQuery.trim().length < 2) {
+    if (!normalizedImageQuery || normalizedImageQuery.trim().length < 2) {
       return;
     }
 
@@ -124,7 +130,7 @@ function PlayerSettingsPanel({
       setIsSearching(true);
 
       const params = new URLSearchParams({
-        query: debouncedImageQuery.trim(),
+        query: normalizedImageQuery.trim(),
         pool: "all",
         commanderOnly: "false",
         sort: "relevance",
@@ -141,26 +147,26 @@ function PlayerSettingsPanel({
         return;
       }
 
-      const payload = (await response.json()) as {
-        data?: {
-          items?: Array<{ id?: string; name?: string; imageUri?: string | null }>;
-        };
-      };
+      const payload = await response.json();
+      const parsed = parseCardSearchResultResponse(payload, "tracker_background_search");
+      if (!parsed) {
+        setImageCandidates([]);
+        setIsSearching(false);
+        return;
+      }
 
-      const mapped = (payload.data?.items ?? [])
-        .filter(
-          (item): item is { id: string; name: string; imageUri: string } =>
-            typeof item.id === "string" &&
-            typeof item.name === "string" &&
-            typeof item.imageUri === "string" &&
-            item.imageUri.length > 0,
-        )
-        .map((item) => ({
+      const mapped = parsed.items.flatMap((item) => {
+        if (typeof item.imageUri !== "string" || item.imageUri.length === 0) {
+          return [];
+        }
+
+        return [{
           id: item.id,
           name: item.name,
           imageUri: item.imageUri,
           artPreviewUri: resolveScryfallArtFocusedUri({ normal: item.imageUri }) ?? item.imageUri,
-        }));
+        }];
+      });
 
       setImageCandidates(mapped);
       setIsSearching(false);
@@ -172,7 +178,7 @@ function PlayerSettingsPanel({
     });
 
     return () => controller.abort();
-  }, [debouncedImageQuery]);
+  }, [normalizedImageQuery]);
 
   async function applyCandidateBackground(candidate: TrackerImageCandidate) {
     setIsApplyingCandidateId(candidate.id);
@@ -267,7 +273,7 @@ function PlayerSettingsPanel({
                       onChange={(event) => {
                         const next = event.target.value;
                         setImageQuery(next);
-                        if (next.trim().length < 2) {
+                        if (normalizeSearchText(next, { maxLength: 120, unicodeForm: "NFKC" }).length < 2) {
                           setImageCandidates([]);
                           setIsSearching(false);
                         }
