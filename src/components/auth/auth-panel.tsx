@@ -36,7 +36,7 @@ export function AuthPanel() {
     }
 
     if (callbackError === "account_unavailable") {
-      return "Signed in with Supabase, but app account provisioning failed. Check DATABASE_URL and Prisma migrations in production.";
+      return "Signed in with Supabase, but app account provisioning failed. Check DATABASE_URL, DIRECT_URL, and Prisma migrations in production.";
     }
 
     return callbackError;

@@ -46,16 +46,38 @@ npm install
 cp .env.example .env
 ```
 
+Set both:
+- `DATABASE_URL`: pooled/runtime connection string used by the app
+- `DIRECT_URL`: direct Postgres connection string used by Prisma migrations
+
 3. Generate Prisma client:
 
 ```bash
 npm run prisma:generate
 ```
 
-4. (Optional) Apply migrations once your Postgres DB is ready:
+4. Apply schema migrations:
 
 ```bash
 npm run prisma:migrate:dev
+```
+
+For production deploys:
+
+```bash
+npm run prisma:migrate:deploy
+```
+
+If production already has the schema from manual SQL and no `_prisma_migrations` history yet, baseline once:
+
+```bash
+npm run prisma:migrate:baseline:init
+```
+
+Then future deploys can use:
+
+```bash
+npm run prisma:migrate:deploy
 ```
 
 5. Run dev server:

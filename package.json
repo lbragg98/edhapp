@@ -12,6 +12,9 @@
     "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate:dev": "prisma migrate dev",
+    "prisma:migrate:deploy": "prisma migrate deploy",
+    "prisma:migrate:status": "prisma migrate status",
+    "prisma:migrate:baseline:init": "prisma migrate resolve --applied 20260423190000_init",
     "prisma:studio": "prisma studio",
     "auth:seed:test-user": "tsx scripts/seed-test-auth-user.ts"
   },
