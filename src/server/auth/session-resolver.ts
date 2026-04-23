@@ -1,4 +1,10 @@
-import { getAppUserIdentity, getAuthIdentity, type AppUserIdentity, type AuthIdentity } from "@/server/auth/auth-user";
+import {
+  getAuthIdentity,
+  resolveAppUserIdentity,
+  type AppUserIdentity,
+  type AuthIdentity,
+  type AppUserResolutionFailureReason,
+} from "@/server/auth/auth-user";
 
 type SessionDiagnosticsContext = {
   scope: "protected-page" | "page" | "api";
@@ -8,7 +14,11 @@ type SessionDiagnosticsContext = {
 export type AppUserSessionResult =
   | { status: "authenticated"; authIdentity: AuthIdentity; appUser: AppUserIdentity }
   | { status: "unauthenticated" }
-  | { status: "provisioning_unavailable"; authIdentity: AuthIdentity };
+  | {
+      status: "provisioning_unavailable";
+      authIdentity: AuthIdentity;
+      reason: AppUserResolutionFailureReason;
+    };
 
 function diagnosticsPrefix(context: SessionDiagnosticsContext): string {
   return `[Auth][${context.scope}]${context.path ? ` ${context.path}` : ""}`;
@@ -22,23 +32,25 @@ export async function resolveAppUserSession(context: SessionDiagnosticsContext):
     return { status: "unauthenticated" };
   }
 
-  const appUser = await getAppUserIdentity();
+  const appUserResolution = await resolveAppUserIdentity(authIdentity);
 
-  if (!appUser) {
+  if (appUserResolution.status === "unavailable") {
     console.error(`${diagnosticsPrefix(context)} Supabase session exists but AppUser resolution failed.`, {
       authUserId: authIdentity.authUserId,
       email: authIdentity.email,
+      reason: appUserResolution.reason,
     });
 
     return {
       status: "provisioning_unavailable",
       authIdentity,
+      reason: appUserResolution.reason,
     };
   }
 
   return {
     status: "authenticated",
     authIdentity,
-    appUser,
+    appUser: appUserResolution.appUser,
   };
 }

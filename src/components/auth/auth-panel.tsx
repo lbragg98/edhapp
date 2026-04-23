@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { getSupabaseBrowserClient } from "@/lib/supabase/browser-client";
 import { buildEmailRedirectUrl } from "@/lib/auth-redirect";
 import { cn } from "@/lib/utils";
@@ -10,7 +10,6 @@ type AuthMode = "magic_link" | "password";
 type PasswordSubmode = "sign_in" | "sign_up";
 
 export function AuthPanel() {
-  const router = useRouter();
   const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,6 +41,12 @@ export function AuthPanel() {
 
     return callbackError;
   }, [callbackError]);
+
+  function navigateToSignedInDestination(path: string) {
+    // Use a hard navigation after credential-based sign-in to guarantee
+    // server routes read the freshly written auth cookies on first load.
+    window.location.assign(path);
+  }
 
   function switchMode(newMode: AuthMode) {
     setMode(newMode);
@@ -121,8 +126,7 @@ export function AuthPanel() {
 
         if (signUpData.session) {
           setMessage("Account created and signed in.");
-          router.push(next);
-          router.refresh();
+          navigateToSignedInDestination(next);
           return;
         }
 
@@ -140,8 +144,7 @@ export function AuthPanel() {
       }
 
       console.info("[Auth][signin] Password sign-in succeeded.", { email });
-      router.push(next);
-      router.refresh();
+      navigateToSignedInDestination(next);
     });
   }
 

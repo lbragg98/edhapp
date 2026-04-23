@@ -436,7 +436,7 @@ export function TrackerPlayerPanel({
   return (
     <article
       className={cn(
-        "relative isolate min-h-[195px] overflow-hidden rounded-2xl border border-white/15 px-2.5 py-2 text-zinc-100 sm:min-h-[220px] sm:px-3",
+        "relative isolate h-full min-h-0 overflow-hidden rounded-2xl border border-white/15 px-2.5 py-2 text-zinc-100 sm:px-3",
         isEliminated && "grayscale saturate-0",
         theme.tileClass,
       )}

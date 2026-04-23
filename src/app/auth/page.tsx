@@ -26,6 +26,11 @@ export default async function AuthPage({ searchParams }: AuthPageProps) {
     redirect(nextPath);
   }
 
+  const errorParam = typeof params.error === "string" ? params.error : null;
+  if (session.status === "provisioning_unavailable" && errorParam !== "account_unavailable") {
+    redirect(`/auth?next=${encodeURIComponent(nextPath)}&error=account_unavailable`);
+  }
+
   return (
     <AppShell>
       <div className="py-8 sm:py-12">

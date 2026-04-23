@@ -30,10 +30,18 @@ export async function requireApiAppUser() {
     };
   }
   if (session.status === "provisioning_unavailable") {
+    console.error("[Auth][api] Authenticated request blocked because AppUser provisioning failed.", {
+      authUserId: session.authIdentity.authUserId,
+      email: session.authIdentity.email,
+      reason: session.reason,
+    });
     return {
       appUser: null,
       response: NextResponse.json(
-        { error: "Authenticated session found, but account provisioning is unavailable." },
+        {
+          error: "Authenticated session found, but account provisioning is unavailable.",
+          reason: session.reason,
+        },
         { status: 503 },
       ),
     };

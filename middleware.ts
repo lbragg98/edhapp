@@ -41,11 +41,29 @@ export async function middleware(request: NextRequest) {
     },
   });
 
+  const shouldLogDiagnostics =
+    process.env.NEXT_PUBLIC_AUTH_DIAGNOSTICS === "true"
+    || process.env.NODE_ENV === "development";
+  const path = request.nextUrl.pathname;
+  const isAuthRelevantPath = path.startsWith("/auth")
+    || path.startsWith("/decks")
+    || path.startsWith("/library")
+    || path.startsWith("/scanner");
+
   // Keep Supabase session cookies fresh, but do not perform route gating here.
   // getUser() is the recommended SSR refresh path in middleware.
-  await supabase.auth.getUser().catch(() => {
-    // Session refresh failures are handled by canonical server-side guards.
-  });
+  const { data, error } = await supabase.auth.getUser();
+  if (error && shouldLogDiagnostics && isAuthRelevantPath) {
+    console.warn("[Auth][middleware] Session refresh failed.", {
+      path,
+      error: error.message,
+    });
+  } else if (shouldLogDiagnostics && isAuthRelevantPath) {
+    console.info("[Auth][middleware] Session refresh evaluated.", {
+      path,
+      hasUser: Boolean(data.user),
+    });
+  }
 
   return response;
 }

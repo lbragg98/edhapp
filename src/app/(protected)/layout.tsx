@@ -8,7 +8,8 @@ type ProtectedLayoutProps = {
 };
 
 export default async function ProtectedLayout({ children }: ProtectedLayoutProps) {
-  await requireProtectedPageSession();
+  const appUser = await requireProtectedPageSession();
+  console.info("[Auth][protected-layout] Session validated.", { appUserId: appUser.appUserId });
 
   return <AppShell>{children}</AppShell>;
 }

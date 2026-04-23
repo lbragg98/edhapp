@@ -11,29 +11,34 @@ function parseProtectedNextPath(value: string | null): string {
   return value;
 }
 
-async function readProtectedPathFromHeaders(): Promise<string> {
-  const headerStore = await headers();
-  return parseProtectedNextPath(headerStore.get("x-app-path"));
-}
-
-const getCachedProtectedSession = cache(async () => {
-  const path = await readProtectedPathFromHeaders();
+const getCachedProtectedSession = cache(async (path: string, requestFingerprint: string | null) => {
   const session = await resolveAppUserSession({ scope: "protected-page", path });
 
   return {
     path,
+    requestFingerprint,
     session,
   };
 });
 
 export async function requireProtectedPageSession() {
-  const { path, session } = await getCachedProtectedSession();
+  const headerStore = await headers();
+  const path = parseProtectedNextPath(headerStore.get("x-app-path"));
+  const requestFingerprint = headerStore.get("cookie");
+  const { session } = await getCachedProtectedSession(path, requestFingerprint);
 
   if (session.status === "unauthenticated") {
+    console.warn("[Auth][protected-page] Redirecting unauthenticated request.", { path });
     redirect(`/auth?next=${encodeURIComponent(path)}`);
   }
 
   if (session.status === "provisioning_unavailable") {
+    console.error("[Auth][protected-page] Authenticated request blocked because AppUser provisioning failed.", {
+      path,
+      authUserId: session.authIdentity.authUserId,
+      email: session.authIdentity.email,
+      reason: session.reason,
+    });
     redirect(`/auth?next=${encodeURIComponent(path)}&error=account_unavailable`);
   }
 

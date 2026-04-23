@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
-import { createSupabaseServerClient } from "@/server/auth";
-import { prisma } from "@/server/db/prisma";
+import {
+  createSupabaseServerClient,
+  resolveAppUserIdentity,
+  toAuthIdentityFromSupabaseUser,
+} from "@/server/auth";
 
 type OtpType = "signup" | "invite" | "magiclink" | "recovery" | "email_change" | "email";
 
@@ -65,45 +68,37 @@ export async function GET(request: Request) {
 
   const { data: resolvedUserData } = await supabase.auth.getUser();
   const authUser = resolvedUserData.user;
+  let provisioningUnavailable = false;
 
-  if (prisma && authUser) {
-    const displayNameValue = authUser.user_metadata?.full_name
-      ?? authUser.user_metadata?.name
-      ?? authUser.user_metadata?.preferred_username;
+  if (!authUser) {
+    console.warn("[Auth][callback] Skipped AppUser upsert.", {
+      hasAuthUser: false,
+    });
+  } else {
+    const identity = toAuthIdentityFromSupabaseUser(authUser);
+    const appUserResolution = await resolveAppUserIdentity(identity);
 
-    const displayName = typeof displayNameValue === "string" && displayNameValue.trim().length > 0
-      ? displayNameValue.trim()
-      : null;
-
-    try {
-      await prisma.appUser.upsert({
-        where: { authUserId: authUser.id },
-        update: {
-          ...(authUser.email ? { email: authUser.email } : {}),
-          ...(displayName ? { displayName } : {}),
-        },
-        create: {
-          authUserId: authUser.id,
-          email: authUser.email ?? null,
-          displayName,
-        },
-      });
+    if (appUserResolution.status === "resolved") {
       console.info("[Auth][callback] AppUser upsert succeeded.", {
-        authUserId: authUser.id,
-        email: authUser.email ?? null,
+        authUserId: identity.authUserId,
+        email: identity.email,
+        appUserId: appUserResolution.appUser.appUserId,
       });
-    } catch (error) {
-      console.error("[Auth][callback] AppUser upsert failed.", {
-        authUserId: authUser.id,
-        email: authUser.email ?? null,
-        error: error instanceof Error ? error.message : "Unknown error",
+    } else {
+      provisioningUnavailable = true;
+      console.error("[Auth][callback] AppUser provisioning unavailable.", {
+        authUserId: identity.authUserId,
+        email: identity.email,
+        reason: appUserResolution.reason,
       });
     }
-  } else {
-    console.warn("[Auth][callback] Skipped AppUser upsert.", {
-      hasPrisma: Boolean(prisma),
-      hasAuthUser: Boolean(authUser),
-    });
+  }
+
+  if (provisioningUnavailable) {
+    const redirectUrl = new URL("/auth", requestUrl.origin);
+    redirectUrl.searchParams.set("next", nextPath);
+    redirectUrl.searchParams.set("error", "account_unavailable");
+    return NextResponse.redirect(redirectUrl);
   }
 
   console.info("[Auth][callback] Session established. Redirecting.", { nextPath });

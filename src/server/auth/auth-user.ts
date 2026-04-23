@@ -26,6 +26,14 @@ export type AppUserIdentity = AuthIdentity & {
   appUserId: string;
 };
 
+export type AppUserResolutionFailureReason =
+  | "database_unavailable"
+  | "app_user_resolution_failed";
+
+export type AppUserResolutionResult =
+  | { status: "resolved"; appUser: AppUserIdentity }
+  | { status: "unavailable"; reason: AppUserResolutionFailureReason };
+
 function toDisplayName(metadata: unknown): string | null {
   if (!metadata || typeof metadata !== "object") {
     return null;
@@ -36,6 +44,18 @@ function toDisplayName(metadata: unknown): string | null {
     ?? (metadata as Record<string, unknown>).preferred_username;
 
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+export function toAuthIdentityFromSupabaseUser(user: {
+  id: string;
+  email?: string | null;
+  user_metadata?: unknown;
+}): AuthIdentity {
+  return {
+    authUserId: user.id,
+    email: user.email ?? null,
+    displayName: toDisplayName(user.user_metadata),
+  };
 }
 
 /**
@@ -52,11 +72,7 @@ export async function getAuthIdentity(): Promise<AuthIdentity | null> {
   const { data, error } = await supabase.auth.getUser();
 
   if (!error && data.user) {
-    return {
-      authUserId: data.user.id,
-      email: data.user.email ?? null,
-      displayName: toDisplayName(data.user.user_metadata),
-    };
+    return toAuthIdentityFromSupabaseUser(data.user);
   }
 
   // Fallback for just-established sessions where getUser can briefly lag.
@@ -67,41 +83,22 @@ export async function getAuthIdentity(): Promise<AuthIdentity | null> {
     return null;
   }
 
-  return {
-    authUserId: sessionUser.id,
-    email: sessionUser.email ?? null,
-    displayName: toDisplayName(sessionUser.user_metadata),
-  };
+  return toAuthIdentityFromSupabaseUser(sessionUser);
 }
 
 /**
- * Retrieves or creates the application user identity for the current authenticated session.
- *
- * **Upsert Behavior:**
- * - If the AppUser exists (by authUserId), updates email/displayName if changed.
- * - If the AppUser does not exist, creates a new record.
- *
- * **Multi-User Guarantee:**
- * - Each Supabase auth user maps to exactly one AppUser.
- * - The returned `appUserId` should be passed to all services/repositories for data scoping.
- *
- * @returns AppUserIdentity if authenticated, null otherwise.
+ * Resolves the internal AppUser row from a known authenticated Supabase identity.
+ * This must use the same auth identity for the whole request to avoid auth-read drift.
  */
-export async function getAppUserIdentity(): Promise<AppUserIdentity | null> {
-  const identity = await getAuthIdentity();
-
-  if (!identity) {
-    return null;
-  }
-
+export async function resolveAppUserIdentity(authIdentity: AuthIdentity): Promise<AppUserResolutionResult> {
   if (!prisma) {
     console.error("[Auth] Prisma client unavailable while resolving AppUser.", {
-      authUserId: identity.authUserId,
-      email: identity.email,
+      authUserId: authIdentity.authUserId,
+      email: authIdentity.email,
       hasDatabaseUrl,
       nodeEnv: process.env.NODE_ENV ?? "unknown",
     });
-    return null;
+    return { status: "unavailable", reason: "database_unavailable" };
   }
 
   try {
@@ -109,54 +106,76 @@ export async function getAppUserIdentity(): Promise<AppUserIdentity | null> {
 
     try {
       appUser = await prisma.appUser.upsert({
-        where: { authUserId: identity.authUserId },
+        where: { authUserId: authIdentity.authUserId },
         update: {
-          ...(identity.email ? { email: identity.email } : {}),
-          ...(identity.displayName ? { displayName: identity.displayName } : {}),
+          ...(authIdentity.email ? { email: authIdentity.email } : {}),
+          ...(authIdentity.displayName ? { displayName: authIdentity.displayName } : {}),
         },
         create: {
-          authUserId: identity.authUserId,
-          email: identity.email,
-          displayName: identity.displayName,
+          authUserId: authIdentity.authUserId,
+          email: authIdentity.email,
+          displayName: authIdentity.displayName,
         },
         select: { id: true },
       });
     } catch (primaryError) {
       // Backward-compatible fallback for environments where authUserId mapping
       // has not been migrated yet but email-based user records exist.
-      if (!identity.email) {
+      if (!authIdentity.email) {
         throw primaryError;
       }
 
       console.warn("[Auth] Falling back to email-based AppUser resolution.", {
-        authUserId: identity.authUserId,
-        email: identity.email,
+        authUserId: authIdentity.authUserId,
+        email: authIdentity.email,
         error: primaryError instanceof Error ? primaryError.message : "Unknown error",
       });
 
       appUser = await prisma.appUser.upsert({
-        where: { email: identity.email },
+        where: { email: authIdentity.email },
         update: {
-          ...(identity.displayName ? { displayName: identity.displayName } : {}),
+          ...(authIdentity.displayName ? { displayName: authIdentity.displayName } : {}),
         },
         create: {
-          email: identity.email,
-          displayName: identity.displayName,
+          email: authIdentity.email,
+          displayName: authIdentity.displayName,
         },
         select: { id: true },
       });
     }
 
     return {
-      ...identity,
-      appUserId: appUser.id,
+      status: "resolved",
+      appUser: {
+        ...authIdentity,
+        appUserId: appUser.id,
+      },
     };
   } catch (error) {
     console.error("[Auth] Failed to resolve AppUser identity.", {
-      authUserId: identity.authUserId,
-      email: identity.email,
+      authUserId: authIdentity.authUserId,
+      email: authIdentity.email,
       error: error instanceof Error ? error.message : "Unknown error",
     });
+    return { status: "unavailable", reason: "app_user_resolution_failed" };
+  }
+}
+
+/**
+ * Retrieves or creates the application user identity for the current authenticated session.
+ * When an identity is provided, the function avoids a second auth read to keep request state consistent.
+ */
+export async function getAppUserIdentity(identity?: AuthIdentity | null): Promise<AppUserIdentity | null> {
+  const authIdentity = identity ?? await getAuthIdentity();
+
+  if (!authIdentity) {
     return null;
   }
+
+  const resolved = await resolveAppUserIdentity(authIdentity);
+  if (resolved.status === "unavailable") {
+    return null;
+  }
+
+  return resolved.appUser;
 }

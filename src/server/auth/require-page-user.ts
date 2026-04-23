@@ -7,6 +7,12 @@ export async function requirePageAppUser(nextPath: string) {
     redirect(`/auth?next=${encodeURIComponent(nextPath)}`);
   }
   if (session.status === "provisioning_unavailable") {
+    console.error("[Auth][page] Authenticated page request blocked because AppUser provisioning failed.", {
+      path: nextPath,
+      authUserId: session.authIdentity.authUserId,
+      email: session.authIdentity.email,
+      reason: session.reason,
+    });
     redirect(`/auth?next=${encodeURIComponent(nextPath)}&error=account_unavailable`);
   }
   return session.appUser;
