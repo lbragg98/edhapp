@@ -4,6 +4,7 @@ import {
   GRID,
   gridLayoutPoints,
   GUIDE,
+  mmToPoints,
   pageLayoutPoints,
 } from "@/modules/playtest-pdf/domain/print-layout";
 import type { ResolvedPrintableImage } from "@/modules/playtest-pdf/application/resolve-printable-images";
@@ -134,6 +135,31 @@ function drawCalibrationPage(page: ReturnType<PDFDocument["addPage"]>, font: Awa
     y: lineY - 12,
     size: 9,
     color: rgb(0.8, 0.8, 0.8),
+    font,
+  });
+
+  const tenMm = mmToPoints(10);
+  const tenMmX = centerX - tenMm / 2;
+  const tenMmY = lineY - 28;
+  page.drawLine({
+    start: { x: tenMmX, y: tenMmY },
+    end: { x: tenMmX + tenMm, y: tenMmY },
+    thickness: 1.5,
+    color: rgb(0.85, 0.85, 0.85),
+  });
+  page.drawText("10mm reference line", {
+    x: tenMmX,
+    y: tenMmY - 12,
+    size: 9,
+    color: rgb(0.8, 0.8, 0.8),
+    font,
+  });
+
+  page.drawText("Image render box equals card boundary (no internal padding).", {
+    x: 24,
+    y: 24,
+    size: 9,
+    color: rgb(0.78, 0.78, 0.78),
     font,
   });
 }

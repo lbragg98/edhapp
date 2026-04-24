@@ -1,4 +1,9 @@
 import type { PlaytestPrintableCard } from "@/modules/playtest-pdf/domain/playtest-pdf";
+import sharp from "sharp";
+
+const TARGET_CARD_ASPECT = 63 / 88;
+const TARGET_WIDTH_PX = 1260;
+const TARGET_HEIGHT_PX = Math.round(TARGET_WIDTH_PX / TARGET_CARD_ASPECT);
 
 export type ResolvedPrintableImage = {
   id: string;
@@ -7,25 +12,33 @@ export type ResolvedPrintableImage = {
   mimeType: "image/jpeg" | "image/png" | null;
 };
 
-function normalizeImageModeUri(input: PlaytestPrintableCard): string | null {
-  return input.imageUri;
+async function normalizePrintableImage(bytes: Uint8Array): Promise<{
+  bytes: Uint8Array;
+  mimeType: "image/jpeg";
+}> {
+  const buffer = Buffer.from(bytes);
+  const processed = await sharp(buffer)
+    // Ensure the rendered image always fills card box (no internal letterboxing).
+    .resize(TARGET_WIDTH_PX, TARGET_HEIGHT_PX, {
+      fit: "cover",
+      position: "attention",
+      withoutEnlargement: false,
+    })
+    .jpeg({
+      quality: 92,
+      chromaSubsampling: "4:4:4",
+      mozjpeg: true,
+    })
+    .toBuffer();
+
+  return {
+    bytes: new Uint8Array(processed),
+    mimeType: "image/jpeg",
+  };
 }
 
-function normalizeMimeType(contentType: string | null): "image/jpeg" | "image/png" | null {
-  if (!contentType) {
-    return null;
-  }
-
-  const lower = contentType.toLowerCase();
-  if (lower.includes("image/png")) {
-    return "image/png";
-  }
-
-  if (lower.includes("image/jpeg") || lower.includes("image/jpg")) {
-    return "image/jpeg";
-  }
-
-  return null;
+function normalizeImageModeUri(input: PlaytestPrintableCard): string | null {
+  return input.imageUri;
 }
 
 export async function resolvePrintableImages(cards: PlaytestPrintableCard[]): Promise<ResolvedPrintableImage[]> {
@@ -60,14 +73,14 @@ export async function resolvePrintableImages(cards: PlaytestPrintableCard[]): Pr
           };
         }
 
-        const mimeType = normalizeMimeType(response.headers.get("content-type"));
         const arrayBuffer = await response.arrayBuffer();
+        const normalized = await normalizePrintableImage(new Uint8Array(arrayBuffer));
 
         return {
           id: card.id,
           name: card.name,
-          bytes: new Uint8Array(arrayBuffer),
-          mimeType,
+          bytes: normalized.bytes,
+          mimeType: normalized.mimeType,
         };
       } catch (error) {
         console.warn("[PlaytestPdf] Error resolving card image", {

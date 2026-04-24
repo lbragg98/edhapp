@@ -579,7 +579,7 @@ export function DeckEditorWorkspace({
   }
 
   return (
-    <div className="min-h-[100dvh] space-y-5 overflow-x-hidden pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
+    <div className="min-h-[100dvh] space-y-4 overflow-x-hidden pb-[calc(7rem+env(safe-area-inset-bottom))] md:space-y-5 md:pb-0">
       <section className="hidden surface-panel p-2 md:block">
         <div className="flex flex-wrap gap-2">
           <button
@@ -761,9 +761,9 @@ export function DeckEditorWorkspace({
             </section>
           </aside>
 
-          <section className={`space-y-5 ${mobileDeckTab === "add" ? "hidden xl:block" : ""}`}>
+          <section className={`space-y-4 md:space-y-5 ${mobileDeckTab === "add" ? "hidden xl:block" : ""}`}>
             {isEmptyDeck ? (
-              <section className={`surface-panel p-5 sm:p-6 ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}>
+              <section className={`surface-panel p-4 sm:p-6 ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}>
                 <p className="type-label">Start Building</p>
                 <h3 className="type-title mt-2">This deck is ready for its first cards.</h3>
                 <p className="type-body-muted mt-2">
@@ -779,7 +779,7 @@ export function DeckEditorWorkspace({
                 </div>
               </section>
             ) : null}
-            <section className={`surface-panel p-5 sm:p-6 ${mobileDeckTab === "deck" || mobileDeckTab === "settings" ? "" : "hidden xl:block"}`}>
+            <section className={`surface-panel p-4 sm:p-6 ${mobileDeckTab === "settings" ? "" : "hidden xl:block"}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="type-label">Deck Metadata</p>
@@ -812,8 +812,18 @@ export function DeckEditorWorkspace({
               <DeckMetadataEditor deck={deck} onSave={saveMetadata} />
             </section>
 
+            <section className={`surface-panel p-4 sm:p-6 ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}>
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-base font-semibold text-zinc-100">{deck.name}</p>
+                  <p className="text-xs text-[color:var(--text-subtle)]">{validation.cardCount}/100 cards</p>
+                </div>
+                <ValueEstimateChip label="Value" estimate={deckValueEstimate} />
+              </div>
+            </section>
+
             <section
-              className={`surface-panel p-5 sm:p-6 ${isDraggingCommander ? "border-white/30" : ""} ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}
+              className={`surface-panel p-4 sm:p-6 ${isDraggingCommander ? "border-white/30" : ""} ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}
               onDragOver={(event) => {
                 event.preventDefault();
                 setIsDraggingCommander(true);
@@ -903,7 +913,7 @@ export function DeckEditorWorkspace({
             </section>
 
             <section
-              className={`surface-panel p-5 sm:p-6 ${isDraggingMainboard ? "border-white/30" : ""} ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}
+              className={`surface-panel p-4 sm:p-6 ${isDraggingMainboard ? "border-white/30" : ""} ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}
               onDragOver={(event) => {
                 event.preventDefault();
                 setIsDraggingMainboard(true);
@@ -1044,11 +1054,11 @@ export function DeckEditorWorkspace({
 
       <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[color:var(--surface-border)] bg-[#090b13]/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 md:hidden">
         <div className="grid grid-cols-5 gap-1">
-          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "deck" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("deck")}>Deck</button>
-          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "add" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("add")}>Add Cards</button>
-          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "suggestions" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("suggestions")}>Suggestions</button>
-          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "stats" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("stats")}>Stats</button>
-          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "settings" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("settings")}>Settings</button>
+          <button type="button" className={`nav-link justify-center whitespace-nowrap text-[11px] ${mobileDeckTab === "deck" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("deck")}>Deck</button>
+          <button type="button" className={`nav-link justify-center whitespace-nowrap text-[11px] ${mobileDeckTab === "add" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("add")}>Add</button>
+          <button type="button" className={`nav-link justify-center whitespace-nowrap text-[11px] ${mobileDeckTab === "suggestions" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("suggestions")}>Suggestions</button>
+          <button type="button" className={`nav-link justify-center whitespace-nowrap text-[11px] ${mobileDeckTab === "stats" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("stats")}>Stats</button>
+          <button type="button" className={`nav-link justify-center whitespace-nowrap text-[11px] ${mobileDeckTab === "settings" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("settings")}>Settings</button>
         </div>
       </nav>
     </div>
@@ -1068,30 +1078,30 @@ function DeckMetadataEditor({
   const [tags, setTags] = useState(deck.tags.join(", "));
 
   return (
-    <div className="mt-4 grid gap-3">
+    <div className="mt-3 grid gap-2.5">
       <input
         value={name}
         onChange={(event) => setName(event.target.value)}
-        className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
+        className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-sm text-zinc-100 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
       />
       <input
         value={description}
         onChange={(event) => setDescription(event.target.value)}
         placeholder="Short description"
-        className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
+        className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
       />
       <textarea
         value={notes}
         onChange={(event) => setNotes(event.target.value)}
         placeholder="Deck notes"
-        rows={4}
-        className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
+        rows={3}
+        className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
       />
       <input
         value={tags}
         onChange={(event) => setTags(event.target.value)}
         placeholder="Tags (comma separated)"
-        className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
+        className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
       />
       <div className="flex justify-end">
         <button

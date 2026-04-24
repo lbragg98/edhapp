@@ -40,6 +40,9 @@ export function DecksWorkspace({ initialDecks }: DecksWorkspaceProps) {
 
       <section className="surface-panel p-5 sm:p-6">
         <p className="type-label">Your Decks</p>
+        <p className="mt-2 text-xs text-[color:var(--text-subtle)]">
+          Playtest PDFs are calibrated to 63mm x 88mm. Print at 100% / Actual Size and disable Fit to Page.
+        </p>
         <div className="mt-3 space-y-2">
           {sortedDecks.length === 0 ? (
             <EmptyState
