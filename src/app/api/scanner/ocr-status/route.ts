@@ -3,6 +3,7 @@ import { getScannerOcrRuntimeStatus } from "@/modules/scanner";
 import { requireApiAppUser } from "@/server/auth";
 
 export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 export async function GET() {
   const auth = await requireApiAppUser();
@@ -12,7 +13,16 @@ export async function GET() {
 
   try {
     const status = await getScannerOcrRuntimeStatus();
-    return NextResponse.json({ data: status });
+    return NextResponse.json(
+      { data: status },
+      {
+        headers: {
+          "Cache-Control": "no-store, max-age=0, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      },
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown OCR status error";
     return NextResponse.json(
@@ -26,8 +36,14 @@ export async function GET() {
           failureStage: "worker_init",
         },
       },
-      { status: 503 },
+      {
+        status: 503,
+        headers: {
+          "Cache-Control": "no-store, max-age=0, must-revalidate",
+          Pragma: "no-cache",
+          Expires: "0",
+        },
+      },
     );
   }
 }
-

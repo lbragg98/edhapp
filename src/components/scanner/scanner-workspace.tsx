@@ -194,7 +194,7 @@ export function ScannerWorkspace() {
     async function loadOcrStatus() {
       setOcrEngine((current) => ({ ...current, loading: true }));
       try {
-        const response = await fetch("/api/scanner/ocr-status");
+        const response = await fetch(`/api/scanner/ocr-status?ts=${Date.now()}`, { cache: "no-store" });
         const payload = (await response.json()) as {
           data?: {
             ready: boolean;
@@ -271,7 +271,7 @@ export function ScannerWorkspace() {
 
     const timeout = window.setTimeout(async () => {
       try {
-        const response = await fetch("/api/scanner/ocr-status");
+        const response = await fetch(`/api/scanner/ocr-status?ts=${Date.now()}`, { cache: "no-store" });
         const payload = (await response.json()) as {
           data?: {
             ready: boolean;
