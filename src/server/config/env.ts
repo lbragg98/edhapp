@@ -10,6 +10,9 @@ const environmentSchema = z.object({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1).optional(),
   SCANNER_OCR_ENDPOINT: z.string().url().optional(),
   SCANNER_OCR_API_KEY: z.string().min(1).optional(),
+  SCANNER_TESSERACT_LANG_PATH: z.string().min(1).optional(),
+  SCANNER_TESSERACT_CORE_PATH: z.string().min(1).optional(),
+  SCANNER_TESSERACT_WORKER_PATH: z.string().min(1).optional(),
 });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);

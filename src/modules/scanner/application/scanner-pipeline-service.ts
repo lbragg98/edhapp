@@ -47,7 +47,14 @@ export class ScannerPipelineService {
       summary: `Image captured (${input.image.mimeType}).`,
     });
 
-    let timeoutStage: "ocr" | "matching" | null = null;
+    let timeoutStage:
+      | "worker_init"
+      | "asset_load"
+      | "ocr_recognize"
+      | "local_match"
+      | "scryfall_match"
+      | "network"
+      | null = null;
     const regions = await this.dependencies.detector.detect(input.image);
     stages.push({
       stage: "region_detection",
@@ -79,7 +86,7 @@ export class ScannerPipelineService {
         : 0;
 
     if (ocrRegions.status === "timeout") {
-      timeoutStage = "ocr";
+      timeoutStage = ocrRegions.failureStage ?? "ocr_recognize";
       issues.push({
         code: "ocr_timeout",
         message: ocrRegions.message ?? "OCR timed out while reading the image.",
@@ -87,6 +94,9 @@ export class ScannerPipelineService {
     }
 
     if (ocrRegions.status === "unavailable" || ocrRegions.status === "error") {
+      if (ocrRegions.failureStage) {
+        timeoutStage = ocrRegions.failureStage;
+      }
       issues.push({
         code: "ocr_unavailable",
         message:
@@ -132,8 +142,12 @@ export class ScannerPipelineService {
         );
       } catch (error) {
         const message = error instanceof Error ? error.message : "matching_failed";
-        if (message === "MATCHING_TIMEOUT" || message.toLowerCase().includes("aborted")) {
-          timeoutStage = "matching";
+        if (message === "MATCHING_TIMEOUT" || message === "LOCAL_MATCH_TIMEOUT") {
+          timeoutStage = "local_match";
+        } else if (message === "SCRYFALL_MATCH_TIMEOUT") {
+          timeoutStage = "scryfall_match";
+        } else if (message.toLowerCase().includes("aborted")) {
+          timeoutStage = "network";
         }
       }
     }
@@ -168,7 +182,7 @@ export class ScannerPipelineService {
       summary:
         candidates.length > 0
           ? `${candidates.length} candidate(s) ranked (${resolved.status}).`
-          : timeoutStage === "matching"
+          : timeoutStage === "local_match" || timeoutStage === "scryfall_match"
             ? "Candidate matching timed out."
             : "No confident card candidates found.",
     });

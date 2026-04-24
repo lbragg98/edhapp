@@ -58,6 +58,7 @@ export type ScannerOcrRecognitionResult = {
   message?: string;
   totalDurationMs?: number;
   workerInitialized?: boolean;
+  failureStage?: "worker_init" | "asset_load" | "ocr_recognize";
 };
 
 export type ScannerCandidateMatch = {
@@ -85,7 +86,14 @@ export type ScannerScanResult = {
     matchingDurationMs: number;
     workerInitialized: boolean;
     primaryCrop: { width: number; height: number } | null;
-    timeoutStage: "ocr" | "matching" | null;
+    timeoutStage:
+      | "worker_init"
+      | "asset_load"
+      | "ocr_recognize"
+      | "local_match"
+      | "scryfall_match"
+      | "network"
+      | null;
   };
 };
 

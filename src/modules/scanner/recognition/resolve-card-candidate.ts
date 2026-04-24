@@ -110,6 +110,11 @@ async function fetchScryfallCardByFuzzyName(cleanedName: string): Promise<CardLi
       cache: "no-store",
       signal: controller.signal,
     });
+  } catch (error) {
+    if ((error as { name?: string } | undefined)?.name === "AbortError") {
+      throw new Error("SCRYFALL_MATCH_TIMEOUT");
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -153,6 +158,11 @@ async function fetchScryfallSearchCandidates(cleanedName: string): Promise<CardL
       cache: "no-store",
       signal: controller.signal,
     });
+  } catch (error) {
+    if ((error as { name?: string } | undefined)?.name === "AbortError") {
+      throw new Error("SCRYFALL_MATCH_TIMEOUT");
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }

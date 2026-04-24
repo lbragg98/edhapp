@@ -40,8 +40,16 @@ type ScannerDebugState = {
   ocrDurationMs: number | null;
   matchingDurationMs: number | null;
   cropSize: string | null;
-  timeoutStage: "ocr" | "matching" | "network" | null;
+  timeoutStage: "worker_init" | "asset_load" | "ocr_recognize" | "local_match" | "scryfall_match" | "network" | null;
   workerInitialized: boolean;
+};
+
+type OcrEngineStatus = {
+  loading: boolean;
+  ready: boolean;
+  source: "local_tesseract" | "remote" | null;
+  failureStage: "worker_init" | "asset_load" | "ocr_recognize" | null;
+  lastError: string | null;
 };
 
 type ScannerCandidate = {
@@ -83,7 +91,7 @@ type ScannerResponse = {
     matchingDurationMs: number;
     workerInitialized: boolean;
     primaryCrop: { width: number; height: number } | null;
-    timeoutStage: "ocr" | "matching" | null;
+    timeoutStage: "worker_init" | "asset_load" | "ocr_recognize" | "local_match" | "scryfall_match" | "network" | null;
   };
 };
 
@@ -137,6 +145,13 @@ export function ScannerWorkspace() {
     timeoutStage: null,
     workerInitialized: false,
   });
+  const [ocrEngine, setOcrEngine] = useState<OcrEngineStatus>({
+    loading: true,
+    ready: false,
+    source: null,
+    failureStage: null,
+    lastError: null,
+  });
   const [frameIntervalMs, setFrameIntervalMs] = useState(() => {
     if (typeof window === "undefined") {
       return 2_000;
@@ -161,6 +176,65 @@ export function ScannerWorkspace() {
   const canRunManualSearch = needsManualFallback && normalizedManualSearch.length >= 2;
   const visibleManualSearchResults = canRunManualSearch ? manualSearchResults : [];
   const showManualSearchLoading = canRunManualSearch && manualSearchLoading;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadOcrStatus() {
+      setOcrEngine((current) => ({ ...current, loading: true }));
+      try {
+        const response = await fetch("/api/scanner/ocr-status");
+        const payload = (await response.json()) as {
+          data?: {
+            ready: boolean;
+            source: "local_tesseract" | "remote";
+            failureStage: "worker_init" | "asset_load" | "ocr_recognize" | null;
+            lastError: string | null;
+          };
+        };
+
+        if (cancelled) {
+          return;
+        }
+
+        if (!response.ok || !payload.data) {
+          setOcrEngine({
+            loading: false,
+            ready: false,
+            source: null,
+            failureStage: "worker_init",
+            lastError: "Failed to initialize OCR runtime.",
+          });
+          return;
+        }
+
+        setOcrEngine({
+          loading: false,
+          ready: payload.data.ready,
+          source: payload.data.source,
+          failureStage: payload.data.failureStage,
+          lastError: payload.data.lastError,
+        });
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        setOcrEngine({
+          loading: false,
+          ready: false,
+          source: null,
+          failureStage: "worker_init",
+          lastError: error instanceof Error ? error.message : "Failed to initialize OCR runtime.",
+        });
+      }
+    }
+
+    void loadOcrStatus();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleFileSelected = useCallback((file: File, compression: CompressionResult, source: CaptureSource) => {
     setSelectedFile(file);
@@ -197,6 +271,19 @@ export function ScannerWorkspace() {
       return;
     }
     if (scanInFlightRef.current) {
+      return;
+    }
+    if (!ocrEngine.ready) {
+      setScanError(ocrEngine.loading ? "OCR engine is loading. Please wait..." : "OCR engine is unavailable.");
+      setIssues([
+        {
+          code: "ocr_unavailable",
+          message:
+            ocrEngine.lastError
+            ?? (ocrEngine.loading ? "OCR engine loading." : "OCR engine failed to initialize."),
+        },
+      ]);
+      setLoopState("error");
       return;
     }
 
@@ -364,10 +451,10 @@ export function ScannerWorkspace() {
       setIsScanning(false);
       scanInFlightRef.current = false;
     }
-  }, [manualText, selectedFile]);
+  }, [manualText, ocrEngine.lastError, ocrEngine.loading, ocrEngine.ready, selectedFile]);
 
   useEffect(() => {
-    if (!selectedFile || isScanning) {
+    if (!selectedFile || isScanning || !ocrEngine.ready) {
       return;
     }
 
@@ -378,7 +465,7 @@ export function ScannerWorkspace() {
     return () => {
       window.clearTimeout(timeout);
     };
-  }, [selectedFile, isScanning, runScan]);
+  }, [selectedFile, isScanning, ocrEngine.ready, runScan]);
 
   useEffect(() => {
     if (!canRunManualSearch) {
@@ -489,7 +576,11 @@ export function ScannerWorkspace() {
 
             <div className="mt-4 flex gap-2">
               <p className="flex-1 rounded-xl border border-[color:var(--surface-border)] bg-white/[0.02] px-3 py-2 text-xs text-[color:var(--text-subtle)]">
-                Auto scan is active. New frames and uploads are analyzed automatically.
+                {ocrEngine.loading
+                  ? "OCR engine loading. Scanning will begin when ready."
+                  : ocrEngine.ready
+                    ? "Auto scan is active. New frames and uploads are analyzed automatically."
+                    : "OCR engine unavailable. Use manual search fallback while runtime is fixed."}
               </p>
               <button type="button" className="nav-link" onClick={handleRetake}>
                 Clear
@@ -511,6 +602,11 @@ export function ScannerWorkspace() {
           <p className="type-label">Scanner Runtime</p>
           <p className="mt-2 text-xs text-[color:var(--text-subtle)]">Camera: {cameraState}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">Loop: {loopState}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">
+            OCR engine: {ocrEngine.loading ? "loading" : ocrEngine.ready ? "ready" : "unavailable"}
+          </p>
+          <p className="text-xs text-[color:var(--text-subtle)]">OCR source: {ocrEngine.source ?? "(unknown)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">OCR failure stage: {ocrEngine.failureStage ?? "(none)"}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">OCR text: {debugState.lastOcrText || "(none)"}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">Confidence: {debugState.lastConfidence !== null ? formatPercentRatio(debugState.lastConfidence) : "(n/a)"}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">Candidate: {debugState.lastCandidate ?? "(none)"}</p>
@@ -529,6 +625,9 @@ export function ScannerWorkspace() {
           ) : null}
           {debugState.lastError ? (
             <p className="mt-1 text-xs text-rose-300">Error: {debugState.lastError}</p>
+          ) : null}
+          {ocrEngine.lastError ? (
+            <p className="mt-1 text-xs text-rose-300">OCR runtime error: {ocrEngine.lastError}</p>
           ) : null}
         </div>
       </section>

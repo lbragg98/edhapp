@@ -80,7 +80,9 @@ const scannerScanViewSchema = z.object({
         height: z.number(),
       })
       .nullable(),
-    timeoutStage: z.enum(["ocr", "matching"]).nullable(),
+    timeoutStage: z
+      .enum(["worker_init", "asset_load", "ocr_recognize", "local_match", "scryfall_match", "network"])
+      .nullable(),
   }),
 });
 

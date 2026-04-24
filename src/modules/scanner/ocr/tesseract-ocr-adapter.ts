@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import { getSharedOcrWorker } from "@/modules/scanner/ocr/ocr-worker";
+import { getSharedOcrWorker, initializeSharedOcrWorker } from "@/modules/scanner/ocr/ocr-worker";
 import type {
   OcrRegionResult,
   ScannerOcrAdapter,
@@ -109,6 +109,17 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
     try {
       return await TesseractOcrAdapter.enqueue(async () => {
         const startedAt = Date.now();
+        const init = await initializeSharedOcrWorker({ timeoutMs: 8_000 });
+        if (!init.ready) {
+          return {
+            status: "unavailable" as const,
+            regions: [],
+            message: init.message ?? "OCR worker initialization failed.",
+            workerInitialized: false,
+            failureStage: init.failureStage ?? "worker_init",
+          };
+        }
+
         const worker = await getSharedOcrWorker();
         const results: OcrRegionResult[] = [];
 
@@ -147,6 +158,7 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
           regions: [],
           message: "OCR request timed out.",
           workerInitialized: true,
+          failureStage: "ocr_recognize",
         };
       }
 
@@ -156,6 +168,7 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
         regions: [],
         message,
         workerInitialized: true,
+        failureStage: "ocr_recognize",
       };
     }
   }
