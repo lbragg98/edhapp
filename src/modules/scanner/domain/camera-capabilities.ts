@@ -19,7 +19,14 @@ export type CameraCapabilities = {
 };
 
 export type CameraError = {
-  code: "permission_denied" | "not_found" | "not_supported" | "overconstrained" | "unknown";
+  code:
+    | "permission_denied"
+    | "not_found"
+    | "not_supported"
+    | "overconstrained"
+    | "not_readable"
+    | "insecure_context"
+    | "unknown";
   message: string;
   recoverable: boolean;
   suggestion: string;
@@ -74,6 +81,15 @@ export function mapCameraError(error: unknown): CameraError {
       message: "Camera settings could not be satisfied.",
       recoverable: true,
       suggestion: "Try again with different settings.",
+    };
+  }
+
+  if (name === "NotReadableError" || name === "TrackStartError") {
+    return {
+      code: "not_readable",
+      message: "Camera is already in use or unavailable.",
+      recoverable: true,
+      suggestion: "Close other camera apps/tabs and try again.",
     };
   }
 

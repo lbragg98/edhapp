@@ -1,11 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, Upload, AlertTriangle, RefreshCw, ImageIcon, Pause, Play } from "lucide-react";
 import type { CameraCapabilities, CameraError } from "@/modules/scanner/domain/camera-capabilities";
 import { compressImage, formatFileSize, type CompressionResult } from "@/modules/scanner/application/compress-image";
-import { CameraStreamController } from "@/modules/scanner/camera/camera-stream-controller";
-import { FrameSampler } from "@/modules/scanner/camera/frame-sampler";
+import { useLiveCameraScanner } from "@/modules/scanner/presentation/use-live-camera-scanner";
 
 type CaptureSource = "upload" | "capture" | "live";
 
@@ -34,32 +33,21 @@ export function ScannerCaptureZone({
 }: ScannerCaptureZoneProps) {
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressionInfo, setCompressionInfo] = useState<CompressionResult | null>(null);
-  const [liveModeEnabled, setLiveModeEnabled] = useState(false);
-  const [liveModeError, setLiveModeError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const captureInputRef = useRef<HTMLInputElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamControllerRef = useRef<CameraStreamController | null>(null);
-  const frameSamplerRef = useRef<FrameSampler | null>(null);
-  const frameInFlightRef = useRef(false);
-
-  const canUseLiveCamera = useMemo(
-    () => Boolean(capabilities?.hasCamera && capabilities.supportsCapture),
-    [capabilities],
-  );
-
-  const stopLiveMode = useCallback(() => {
-    frameSamplerRef.current?.stop();
-    frameSamplerRef.current = null;
-    streamControllerRef.current?.stop();
-    streamControllerRef.current = null;
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    frameInFlightRef.current = false;
-    setLiveModeEnabled(false);
-  }, []);
+  const {
+    status: liveCameraStatus,
+    lastError: liveCameraLastError,
+    videoRef: liveVideoRef,
+    canvasRef: liveCanvasRef,
+    start: startLiveCamera,
+    stop: stopLiveCamera,
+    isActive: isLiveCameraActive,
+  } = useLiveCameraScanner({
+    isScanning,
+    intervalMs: 900,
+    onFrame: onFileSelected,
+  });
 
   const handleFileChange = useCallback(
     async (event: React.ChangeEvent<HTMLInputElement>, source: CaptureSource) => {
@@ -111,97 +99,11 @@ export function ScannerCaptureZone({
     fileInputRef.current?.click();
   }, []);
 
-  const sampleLiveFrame = useCallback(async () => {
-    if (!videoRef.current || !canvasRef.current || frameInFlightRef.current || isScanning) {
-      return;
+  useEffect(() => {
+    if (liveCameraStatus === "denied" && capabilities?.permissionState !== "denied") {
+      void onRefresh();
     }
-
-    const video = videoRef.current;
-    if (!video.videoWidth || !video.videoHeight) {
-      return;
-    }
-
-    frameInFlightRef.current = true;
-    try {
-      const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      const context = canvas.getContext("2d");
-      if (!context) {
-        return;
-      }
-
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/jpeg", 0.86),
-      );
-
-      if (!blob) {
-        return;
-      }
-
-      const file = new File([blob], `live-scan-${Date.now()}.jpg`, {
-        type: "image/jpeg",
-      });
-      const result: CompressionResult = {
-        file,
-        wasCompressed: false,
-        originalSize: file.size,
-        finalSize: file.size,
-        ratio: 1,
-      };
-      onFileSelected(file, result, "live");
-    } finally {
-      frameInFlightRef.current = false;
-    }
-  }, [isScanning, onFileSelected]);
-
-  const startLiveMode = useCallback(async () => {
-    if (!canUseLiveCamera) {
-      setLiveModeError("Live camera scanning is not available on this device.");
-      return;
-    }
-
-    try {
-      setLiveModeError(null);
-      if (capabilities?.permissionState === "prompt") {
-        const granted = await onRequestPermission();
-        if (!granted) {
-          setLiveModeError("Camera permission was not granted.");
-          return;
-        }
-      }
-
-      const controller = new CameraStreamController();
-      const stream = await controller.start({
-        video: {
-          facingMode: { ideal: "environment" },
-        },
-        audio: false,
-      });
-
-      if (!videoRef.current) {
-        controller.stop();
-        return;
-      }
-
-      videoRef.current.srcObject = stream;
-      await videoRef.current.play();
-
-      streamControllerRef.current = controller;
-      const sampler = new FrameSampler();
-      sampler.start(sampleLiveFrame, { intervalMs: 900 });
-      frameSamplerRef.current = sampler;
-      setLiveModeEnabled(true);
-    } catch (captureError) {
-      setLiveModeError(
-        captureError instanceof Error ? captureError.message : "Unable to start live scanner.",
-      );
-      stopLiveMode();
-    }
-  }, [canUseLiveCamera, capabilities, onRequestPermission, sampleLiveFrame, stopLiveMode]);
-
-  useEffect(() => () => stopLiveMode(), [stopLiveMode]);
+  }, [capabilities?.permissionState, liveCameraStatus, onRefresh]);
 
   // Permission denied state
   if (error?.code === "permission_denied" || capabilities?.permissionState === "denied") {
@@ -276,16 +178,16 @@ export function ScannerCaptureZone({
       {/* Capture Zone with Framing Guide */}
       <div className="mt-3 overflow-hidden rounded-xl border border-dashed border-[color:var(--surface-border-strong)] bg-white/[0.02]">
         <div className="relative aspect-[3/4] max-h-72">
-          {liveModeEnabled ? (
+          {isLiveCameraActive ? (
             <video
-              ref={videoRef}
+              ref={liveVideoRef}
               className="absolute inset-0 h-full w-full object-cover"
               muted
               playsInline
               autoPlay
             />
           ) : null}
-          <canvas ref={canvasRef} className="hidden" />
+          <canvas ref={liveCanvasRef} className="hidden" />
           <div className="absolute inset-0 flex items-center justify-center">
             {/* Card frame guide */}
             <div className="relative h-[85%] w-[65%]">
@@ -302,7 +204,7 @@ export function ScannerCaptureZone({
                     <RefreshCw size={16} className="animate-spin" />
                     Detecting camera...
                   </div>
-                ) : liveModeEnabled ? (
+                ) : isLiveCameraActive ? (
                   <div className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-200">
                     Live scanning active
                   </div>
@@ -332,11 +234,11 @@ export function ScannerCaptureZone({
       <div className="mt-4 flex gap-2">
         <button
           type="button"
-          onClick={liveModeEnabled ? stopLiveMode : () => void startLiveMode()}
+          onClick={isLiveCameraActive ? stopLiveCamera : () => void startLiveCamera()}
           disabled={isDetecting || isCompressing}
           className="nav-link nav-link-active flex-1 justify-center"
         >
-          {liveModeEnabled ? (
+          {isLiveCameraActive ? (
             <>
               <Pause size={14} className="mr-1.5" />
               Stop Live Scan
@@ -351,7 +253,7 @@ export function ScannerCaptureZone({
         <button
           type="button"
           onClick={handleCaptureClick}
-          disabled={isDetecting || isCompressing || liveModeEnabled}
+          disabled={isDetecting || isCompressing || isLiveCameraActive}
           className="nav-link"
         >
           <Camera size={14} className="mr-1.5" />
@@ -368,9 +270,15 @@ export function ScannerCaptureZone({
         </button>
       </div>
 
-      {liveModeError ? (
-        <p className="mt-3 text-xs text-rose-300">{liveModeError}</p>
-      ) : null}
+      <div className="mt-3 rounded-lg border border-[color:var(--surface-border)] bg-white/[0.02] px-3 py-2">
+        <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-[color:var(--text-subtle)]">
+          Camera Status
+        </p>
+        <p className="mt-1 text-xs text-zinc-200">{liveCameraStatus}</p>
+        {liveCameraLastError ? (
+          <p className="mt-1 text-xs text-rose-300">{liveCameraLastError}</p>
+        ) : null}
+      </div>
 
       {/* Compression feedback */}
       {compressionInfo?.wasCompressed && (
