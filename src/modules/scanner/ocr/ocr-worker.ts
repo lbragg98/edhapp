@@ -6,14 +6,26 @@ import { env } from "@/server/config/env";
 
 const { createWorker, PSM } = Tesseract;
 
-type OcrFailureStage = "worker_init" | "asset_load" | "ocr_recognize";
-const OCR_INIT_MAX_WAIT_MS = 15_000;
+export type OcrFailureStage = "worker_init" | "asset_load" | "ocr_recognize";
+export type OcrInitPhase =
+  | "idle"
+  | "starting"
+  | "loading_worker"
+  | "loading_core"
+  | "loading_language"
+  | "ready"
+  | "failed";
+
+const WORKER_INIT_TIMEOUT_MS = 10_000;
+const LANGUAGE_LOAD_TIMEOUT_MS = 10_000;
 
 type OcrWorkerState = {
   workerPromise: ReturnType<typeof createWorker> | null;
   ready: boolean;
   initializing: boolean;
   initStartedAt: number | null;
+  phaseStartedAt: number | null;
+  initPhase: OcrInitPhase;
   lastInitDurationMs: number | null;
   lastError: string | null;
   lastFailureStage: OcrFailureStage | null;
@@ -24,6 +36,8 @@ const state: OcrWorkerState = {
   ready: false,
   initializing: false,
   initStartedAt: null,
+  phaseStartedAt: null,
+  initPhase: "idle",
   lastInitDurationMs: null,
   lastError: null,
   lastFailureStage: null,
@@ -32,7 +46,6 @@ const state: OcrWorkerState = {
 function withTimeout<T>(operation: Promise<T>, timeoutMs: number, code: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(code)), timeoutMs);
-
     operation
       .then((value) => {
         clearTimeout(timer);
@@ -61,8 +74,41 @@ function detectFailureStage(message: string): OcrFailureStage {
   return "worker_init";
 }
 
+function setInitPhase(phase: OcrInitPhase) {
+  if (state.initPhase !== phase) {
+    state.initPhase = phase;
+    state.phaseStartedAt = Date.now();
+  }
+}
+
+function updatePhaseFromLogger(message: unknown) {
+  if (!message || typeof message !== "object") {
+    return;
+  }
+  const status = "status" in message && typeof message.status === "string" ? message.status.toLowerCase() : "";
+  if (!status) {
+    return;
+  }
+
+  if (status.includes("loading tesseract core")) {
+    setInitPhase("loading_core");
+    return;
+  }
+  if (status.includes("loading language traineddata")) {
+    setInitPhase("loading_language");
+    return;
+  }
+  if (status.includes("initializing tesseract") || status.includes("initialized tesseract")) {
+    setInitPhase("loading_language");
+  }
+}
+
+function getCachePath() {
+  return env.SCANNER_TESSERACT_CACHE_PATH || path.join(os.tmpdir(), "tesseract-cache");
+}
+
 function buildWorkerOptions() {
-  const cachePath = env.SCANNER_TESSERACT_CACHE_PATH || path.join(os.tmpdir(), "tesseract-cache");
+  const cachePath = getCachePath();
   try {
     fs.mkdirSync(cachePath, { recursive: true });
   } catch (error) {
@@ -77,15 +123,27 @@ function buildWorkerOptions() {
     ...(env.SCANNER_TESSERACT_CORE_PATH ? { corePath: env.SCANNER_TESSERACT_CORE_PATH } : {}),
     ...(env.SCANNER_TESSERACT_WORKER_PATH ? { workerPath: env.SCANNER_TESSERACT_WORKER_PATH } : {}),
     cachePath,
+    logger: updatePhaseFromLogger,
   };
 }
 
 async function createAndInitializeWorker() {
+  setInitPhase("loading_worker");
   const worker = await createWorker("eng", 1, buildWorkerOptions());
   await worker.setParameters({
     tessedit_pageseg_mode: PSM.SINGLE_LINE,
   });
   return worker;
+}
+
+function finalizeInitializationError(message: string, failureStage: OcrFailureStage) {
+  state.lastInitDurationMs = state.initStartedAt ? Date.now() - state.initStartedAt : null;
+  state.ready = false;
+  state.initializing = false;
+  state.lastError = message;
+  state.lastFailureStage = failureStage;
+  state.workerPromise = null;
+  setInitPhase("failed");
 }
 
 function ensureInitializationStarted() {
@@ -98,6 +156,7 @@ function ensureInitializationStarted() {
   state.lastInitDurationMs = null;
   state.lastError = null;
   state.lastFailureStage = null;
+  setInitPhase("starting");
   state.workerPromise = createAndInitializeWorker();
 
   state.workerPromise
@@ -107,26 +166,47 @@ function ensureInitializationStarted() {
       state.initializing = false;
       state.lastError = null;
       state.lastFailureStage = null;
+      setInitPhase("ready");
     })
     .catch((error) => {
       const message = error instanceof Error ? error.message : "Unknown OCR worker initialization error";
       const failureStage = detectFailureStage(message);
-      state.lastInitDurationMs = state.initStartedAt ? Date.now() - state.initStartedAt : null;
-      state.ready = false;
-      state.initializing = false;
-      state.lastError = message;
-      state.lastFailureStage = failureStage;
-      state.workerPromise = null;
-
+      finalizeInitializationError(message, failureStage);
       console.error("[Scanner][ocr] Worker initialization failed.", {
         message,
         failureStage,
         langPath: env.SCANNER_TESSERACT_LANG_PATH ?? "default",
         corePath: env.SCANNER_TESSERACT_CORE_PATH ?? "default",
         workerPath: env.SCANNER_TESSERACT_WORKER_PATH ?? "default",
-        cachePath: env.SCANNER_TESSERACT_CACHE_PATH ?? path.join(os.tmpdir(), "tesseract-cache"),
+        cachePath: getCachePath(),
       });
     });
+}
+
+function enforceInitializationTimeouts() {
+  if (!state.initializing || !state.initStartedAt) {
+    return;
+  }
+
+  const now = Date.now();
+  const totalElapsed = now - state.initStartedAt;
+  if (totalElapsed > WORKER_INIT_TIMEOUT_MS) {
+    finalizeInitializationError(
+      `OCR worker initialization timed out after ${WORKER_INIT_TIMEOUT_MS}ms`,
+      "worker_init",
+    );
+    return;
+  }
+
+  if (state.initPhase === "loading_language" && state.phaseStartedAt) {
+    const languageElapsed = now - state.phaseStartedAt;
+    if (languageElapsed > LANGUAGE_LOAD_TIMEOUT_MS) {
+      finalizeInitializationError(
+        `OCR language load timed out after ${LANGUAGE_LOAD_TIMEOUT_MS}ms`,
+        "asset_load",
+      );
+    }
+  }
 }
 
 export async function initializeSharedOcrWorker(options?: { timeoutMs?: number }): Promise<{
@@ -136,8 +216,9 @@ export async function initializeSharedOcrWorker(options?: { timeoutMs?: number }
   message?: string;
   failureStage?: OcrFailureStage;
 }> {
-  const timeoutMs = options?.timeoutMs ?? 12_000;
+  const timeoutMs = options?.timeoutMs ?? 1_500;
   ensureInitializationStarted();
+  enforceInitializationTimeouts();
 
   if (!state.workerPromise) {
     return {
@@ -159,20 +240,14 @@ export async function initializeSharedOcrWorker(options?: { timeoutMs?: number }
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown OCR worker initialization error";
     if (message === "OCR_WORKER_INIT_TIMEOUT") {
-      const elapsedMs = state.initStartedAt ? Date.now() - state.initStartedAt : timeoutMs;
-      if (elapsedMs >= OCR_INIT_MAX_WAIT_MS) {
-        state.ready = false;
-        state.initializing = false;
-        state.workerPromise = null;
-        state.lastFailureStage = "worker_init";
-        state.lastInitDurationMs = elapsedMs;
-        state.lastError = `OCR worker initialization timed out after ${elapsedMs}ms`;
+      enforceInitializationTimeouts();
+      if (!state.initializing) {
         return {
           ready: false,
           initializing: false,
           workerInitialized: false,
-          message: state.lastError,
-          failureStage: "worker_init",
+          message: state.lastError ?? "OCR initialization failed.",
+          failureStage: state.lastFailureStage ?? "worker_init",
         };
       }
 
@@ -196,7 +271,7 @@ export async function initializeSharedOcrWorker(options?: { timeoutMs?: number }
 }
 
 export async function getSharedOcrWorker() {
-  const initialized = await initializeSharedOcrWorker({ timeoutMs: 45_000 });
+  const initialized = await initializeSharedOcrWorker({ timeoutMs: WORKER_INIT_TIMEOUT_MS });
   if (!initialized.ready || !state.workerPromise) {
     throw new Error(initialized.message ?? "OCR worker unavailable");
   }
@@ -204,7 +279,8 @@ export async function getSharedOcrWorker() {
 }
 
 export function getOcrWorkerRuntimeStatus() {
-  const cachePath = env.SCANNER_TESSERACT_CACHE_PATH || path.join(os.tmpdir(), "tesseract-cache");
+  enforceInitializationTimeouts();
+
   const initDurationMs = state.initStartedAt
     ? state.ready || !state.initializing
       ? (state.lastInitDurationMs ?? Date.now() - state.initStartedAt)
@@ -217,6 +293,7 @@ export function getOcrWorkerRuntimeStatus() {
     initStartedAt: state.initStartedAt,
     initDurationMs,
     lastInitDurationMs: state.lastInitDurationMs,
+    initPhase: state.initPhase,
     workerInitialized: state.ready && Boolean(state.workerPromise),
     lastError: state.lastError,
     failureStage: state.lastFailureStage,
@@ -224,7 +301,8 @@ export function getOcrWorkerRuntimeStatus() {
       langPath: env.SCANNER_TESSERACT_LANG_PATH ?? "default",
       corePath: env.SCANNER_TESSERACT_CORE_PATH ?? "default",
       workerPath: env.SCANNER_TESSERACT_WORKER_PATH ?? "default",
-      cachePath,
+      cachePath: getCachePath(),
     },
   };
 }
+

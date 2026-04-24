@@ -8,7 +8,7 @@ import type {
   ScannerRegion,
 } from "@/modules/scanner/domain/scanner-record";
 
-const OCR_TIMEOUT_MS = 12_000;
+const OCR_TIMEOUT_MS = 15_000;
 const MAX_OCR_WIDTH = 800;
 
 function clamp01(value: number): number {
@@ -109,7 +109,7 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
     try {
       return await TesseractOcrAdapter.enqueue(async () => {
         const startedAt = Date.now();
-        const init = await initializeSharedOcrWorker({ timeoutMs: 8_000 });
+        const init = await initializeSharedOcrWorker({ timeoutMs: 10_000 });
         if (!init.ready) {
           return {
             status: "unavailable" as const,

@@ -22,6 +22,8 @@ const ocrResponseSchema = z.object({
 });
 
 export class HttpOcrAdapter implements ScannerOcrAdapter {
+  private static readonly REQUEST_TIMEOUT_MS = 15_000;
+
   constructor(
     private readonly options: {
       endpoint: string;
@@ -41,11 +43,30 @@ export class HttpOcrAdapter implements ScannerOcrAdapter {
     form.set("image", blob, `capture.${input.image.mimeType.split("/")[1] ?? "jpg"}`);
     form.set("regions", JSON.stringify(input.regions));
 
-    const response = await fetch(this.options.endpoint, {
-      method: "POST",
-      ...(this.options.apiKey ? { headers: { "x-api-key": this.options.apiKey } } : {}),
-      body: form,
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HttpOcrAdapter.REQUEST_TIMEOUT_MS);
+    let response: Response;
+    try {
+      response = await fetch(this.options.endpoint, {
+        method: "POST",
+        ...(this.options.apiKey ? { headers: { "x-api-key": this.options.apiKey } } : {}),
+        body: form,
+        signal: controller.signal,
+      });
+    } catch (error) {
+      const aborted = (error as { name?: string } | undefined)?.name === "AbortError";
+      return {
+        status: aborted ? "timeout" : "unavailable",
+        regions: [],
+        message: aborted
+          ? `Remote OCR endpoint timed out after ${HttpOcrAdapter.REQUEST_TIMEOUT_MS}ms.`
+          : "Remote OCR endpoint request failed.",
+        workerInitialized: false,
+        failureStage: aborted ? "ocr_recognize" : "asset_load",
+      };
+    } finally {
+      clearTimeout(timer);
+    }
 
     if (!response.ok) {
       return {

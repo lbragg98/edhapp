@@ -48,8 +48,10 @@ type OcrEngineStatus = {
   loading: boolean;
   initializing: boolean;
   ready: boolean;
-  source: "local_tesseract" | "remote" | null;
-  failureStage: "worker_init" | "asset_load" | "ocr_recognize" | null;
+  source: "local_tesseract" | "remote" | "disabled" | null;
+  provider: "browser" | "server" | "disabled" | null;
+  failureStage: "worker_init" | "asset_load" | "ocr_recognize" | "network" | null;
+  initPhase: "idle" | "starting" | "loading_worker" | "loading_core" | "loading_language" | "ready" | "failed" | null;
   lastError: string | null;
   initDurationMs: number | null;
   assetPaths: {
@@ -158,7 +160,9 @@ export function ScannerWorkspace() {
     initializing: false,
     ready: false,
     source: null,
+    provider: null,
     failureStage: null,
+    initPhase: null,
     lastError: null,
     initDurationMs: null,
     assetPaths: null,
@@ -199,8 +203,10 @@ export function ScannerWorkspace() {
           data?: {
             ready: boolean;
             initializing: boolean;
-            source: "local_tesseract" | "remote";
-            failureStage: "worker_init" | "asset_load" | "ocr_recognize" | null;
+            source: "local_tesseract" | "remote" | "disabled";
+            provider: "browser" | "server" | "disabled";
+            failureStage: "worker_init" | "asset_load" | "ocr_recognize" | "network" | null;
+            initPhase: "idle" | "starting" | "loading_worker" | "loading_core" | "loading_language" | "ready" | "failed";
             lastError: string | null;
             initDurationMs: number | null;
             assetPaths: {
@@ -222,7 +228,9 @@ export function ScannerWorkspace() {
             initializing: false,
             ready: false,
             source: null,
+            provider: null,
             failureStage: "worker_init",
+            initPhase: "failed",
             lastError: "Failed to initialize OCR runtime.",
             initDurationMs: null,
             assetPaths: null,
@@ -235,7 +243,9 @@ export function ScannerWorkspace() {
           initializing: payload.data.initializing,
           ready: payload.data.ready,
           source: payload.data.source,
+          provider: payload.data.provider,
           failureStage: payload.data.failureStage,
+          initPhase: payload.data.initPhase,
           lastError: payload.data.lastError,
           initDurationMs: payload.data.initDurationMs,
           assetPaths: payload.data.assetPaths,
@@ -249,7 +259,9 @@ export function ScannerWorkspace() {
           initializing: false,
           ready: false,
           source: null,
+          provider: null,
           failureStage: "worker_init",
+          initPhase: "failed",
           lastError: error instanceof Error ? error.message : "Failed to initialize OCR runtime.",
           initDurationMs: null,
           assetPaths: null,
@@ -277,7 +289,9 @@ export function ScannerWorkspace() {
             ready: boolean;
             initializing: boolean;
             source: "local_tesseract" | "remote";
-            failureStage: "worker_init" | "asset_load" | "ocr_recognize" | null;
+            provider: "browser" | "server" | "disabled";
+            failureStage: "worker_init" | "asset_load" | "ocr_recognize" | "network" | null;
+            initPhase: "idle" | "starting" | "loading_worker" | "loading_core" | "loading_language" | "ready" | "failed";
             lastError: string | null;
             initDurationMs: number | null;
             assetPaths: {
@@ -297,6 +311,7 @@ export function ScannerWorkspace() {
             ready: false,
             lastError: "Failed to initialize OCR runtime.",
             failureStage: "worker_init",
+            initPhase: "failed",
             initDurationMs: null,
             assetPaths: null,
           }));
@@ -308,7 +323,9 @@ export function ScannerWorkspace() {
           initializing: payload.data.initializing,
           ready: payload.data.ready,
           source: payload.data.source,
+          provider: payload.data.provider,
           failureStage: payload.data.failureStage,
+          initPhase: payload.data.initPhase,
           lastError: payload.data.lastError,
           initDurationMs: payload.data.initDurationMs,
           assetPaths: payload.data.assetPaths,
@@ -321,6 +338,7 @@ export function ScannerWorkspace() {
           ready: false,
           lastError: error instanceof Error ? error.message : "Failed to initialize OCR runtime.",
           failureStage: "worker_init",
+          initPhase: "failed",
           initDurationMs: null,
           assetPaths: null,
         }));
@@ -708,9 +726,11 @@ export function ScannerWorkspace() {
             OCR engine: {ocrEngine.loading || ocrEngine.initializing ? "loading" : ocrEngine.ready ? "ready" : "unavailable"}
           </p>
           <p className="text-xs text-[color:var(--text-subtle)]">OCR source: {ocrEngine.source ?? "(unknown)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">OCR provider: {ocrEngine.provider ?? "(unknown)"}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">
             OCR status: {ocrEngine.loading || ocrEngine.initializing ? "loading-ocr" : ocrEngine.ready ? "ocr-ready" : "ocr-failed"}
           </p>
+          <p className="text-xs text-[color:var(--text-subtle)]">OCR init phase: {ocrEngine.initPhase ?? "(n/a)"}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">
             OCR init duration: {ocrEngine.initDurationMs !== null ? `${ocrEngine.initDurationMs}ms` : "(n/a)"}
           </p>

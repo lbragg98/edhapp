@@ -1,20 +1,12 @@
 import { ScannerPipelineService } from "@/modules/scanner/application/scanner-pipeline-service";
 import { DefaultRegionDetector } from "@/modules/scanner/infrastructure/detection/default-region-detector";
-import { HttpOcrAdapter } from "@/modules/scanner/infrastructure/ocr/http-ocr-adapter";
-import { TesseractOcrAdapter } from "@/modules/scanner/ocr/tesseract-ocr-adapter";
 import type { ScannerOcrAdapter } from "@/modules/scanner/domain/scanner-record";
+import { createOcrProvider, resolveOcrProviderMode } from "@/modules/scanner/ocr/providers";
 import { getOcrWorkerRuntimeStatus, initializeSharedOcrWorker } from "@/modules/scanner/ocr/ocr-worker";
 import { env } from "@/server/config/env";
 
 function createOcrAdapter(): ScannerOcrAdapter {
-  if (env.SCANNER_OCR_ENDPOINT) {
-    return new HttpOcrAdapter({
-      endpoint: env.SCANNER_OCR_ENDPOINT,
-      ...(env.SCANNER_OCR_API_KEY ? { apiKey: env.SCANNER_OCR_API_KEY } : {}),
-    });
-  }
-
-  return new TesseractOcrAdapter();
+  return createOcrProvider().adapter;
 }
 
 export function createScannerPipelineService(userId?: string) {
@@ -26,25 +18,49 @@ export function createScannerPipelineService(userId?: string) {
 }
 
 export async function getScannerOcrRuntimeStatus() {
-  if (env.SCANNER_OCR_ENDPOINT) {
+  const mode = resolveOcrProviderMode();
+
+  if (mode === "disabled") {
     return {
-      ready: true,
+      ready: false,
       initializing: false,
-      workerInitialized: true,
+      workerInitialized: false,
+      source: "disabled" as const,
+      provider: mode,
+      lastError: "OCR provider disabled. Use manual search fallback.",
+      failureStage: "worker_init" as const,
+      initDurationMs: null as number | null,
+      assetPaths: {
+        langPath: "disabled",
+        corePath: "disabled",
+        workerPath: "disabled",
+        cachePath: "disabled",
+      },
+      initPhase: "failed" as const,
+    };
+  }
+
+  if (mode === "server") {
+    return {
+      ready: Boolean(env.SCANNER_OCR_ENDPOINT),
+      initializing: false,
+      workerInitialized: Boolean(env.SCANNER_OCR_ENDPOINT),
       source: "remote" as const,
-      lastError: null as string | null,
-      failureStage: null as "worker_init" | "asset_load" | "ocr_recognize" | null,
+      provider: mode,
+      lastError: env.SCANNER_OCR_ENDPOINT ? null : "SCANNER_OCR_ENDPOINT is not configured.",
+      failureStage: env.SCANNER_OCR_ENDPOINT ? null : ("network" as const),
       initDurationMs: null as number | null,
       assetPaths: {
         langPath: "remote",
         corePath: "remote",
-        workerPath: "remote",
+        workerPath: env.SCANNER_OCR_ENDPOINT ?? "missing",
         cachePath: "remote",
       },
+      initPhase: env.SCANNER_OCR_ENDPOINT ? ("ready" as const) : ("failed" as const),
     };
   }
 
-  const initialized = await initializeSharedOcrWorker({ timeoutMs: 8_000 });
+  const initialized = await initializeSharedOcrWorker({ timeoutMs: 500 });
   const runtime = getOcrWorkerRuntimeStatus();
   const initializing = runtime.initializing || initialized.initializing;
   const ready = initialized.ready && runtime.ready;
@@ -54,9 +70,11 @@ export async function getScannerOcrRuntimeStatus() {
     initializing,
     workerInitialized: runtime.workerInitialized,
     source: "local_tesseract" as const,
+    provider: mode,
     lastError: ready || initializing ? null : runtime.lastError ?? initialized.message ?? null,
     failureStage: ready || initializing ? null : runtime.failureStage ?? initialized.failureStage ?? null,
     initDurationMs: runtime.initDurationMs ?? null,
     assetPaths: runtime.assetPaths,
+    initPhase: runtime.initPhase,
   };
 }

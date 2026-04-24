@@ -32,8 +32,17 @@ export async function GET() {
           initializing: false,
           workerInitialized: false,
           source: "local_tesseract",
+          provider: "browser",
           lastError: message,
           failureStage: "worker_init",
+          initDurationMs: null,
+          initPhase: "failed",
+          assetPaths: {
+            langPath: "unknown",
+            corePath: "unknown",
+            workerPath: "unknown",
+            cachePath: "unknown",
+          },
         },
       },
       {
