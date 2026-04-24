@@ -25,14 +25,5 @@ export function buildCardNameRegion(regionId = "name_bar"): ScannerRegion {
 export function buildFallbackNameRegions(): ScannerRegion[] {
   return [
     buildCardNameRegion("name_bar_primary"),
-    {
-      id: "name_bar_wide",
-      x: 0.04,
-      y: 0.035,
-      width: 0.92,
-      height: 0.145,
-      confidence: 0.76,
-    },
   ];
 }
-

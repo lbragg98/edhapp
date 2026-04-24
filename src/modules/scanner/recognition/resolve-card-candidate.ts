@@ -12,6 +12,7 @@ import { prisma } from "@/server/db/prisma";
 const SCRYFALL_API_BASE = "https://api.scryfall.com";
 const SCRYFALL_MIN_INTERVAL_MS = 120;
 const SCRYFALL_CACHE_TTL_MS = 60_000;
+const SCRYFALL_REQUEST_TIMEOUT_MS = 4_000;
 
 type CandidateResolutionStatus = "high-confidence" | "needs-confirmation" | "failed";
 
@@ -99,11 +100,19 @@ function toConfidence(
 async function fetchScryfallCardByFuzzyName(cleanedName: string): Promise<CardListItem | null> {
   await throttleScryfall();
   const url = `${SCRYFALL_API_BASE}/cards/named?fuzzy=${encodeURIComponent(cleanedName)}`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SCRYFALL_REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const json = (await response.json()) as unknown;
 
@@ -134,11 +143,19 @@ async function fetchScryfallCardByFuzzyName(cleanedName: string): Promise<CardLi
 async function fetchScryfallSearchCandidates(cleanedName: string): Promise<CardListItem[]> {
   await throttleScryfall();
   const url = `${SCRYFALL_API_BASE}/cards/search?q=${encodeURIComponent(cleanedName)}&order=name&unique=cards`;
-  const response = await fetch(url, {
-    method: "GET",
-    headers: { Accept: "application/json" },
-    cache: "no-store",
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SCRYFALL_REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const json = (await response.json()) as unknown;
 
@@ -315,4 +332,3 @@ export async function resolveCardCandidate(input: {
   fallbackCache.set(normalizedQuery, result);
   return result;
 }
-

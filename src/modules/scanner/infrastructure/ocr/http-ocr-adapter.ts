@@ -7,11 +7,16 @@ import type {
 } from "@/modules/scanner/domain/scanner-record";
 
 const ocrResponseSchema = z.object({
+  totalDurationMs: z.number().optional(),
+  workerInitialized: z.boolean().optional(),
   regions: z.array(
     z.object({
       regionId: z.string(),
       text: z.string(),
       confidence: z.number().min(0).max(1),
+      durationMs: z.number().optional(),
+      cropWidth: z.number().optional(),
+      cropHeight: z.number().optional(),
     }),
   ),
 });
@@ -63,7 +68,16 @@ export class HttpOcrAdapter implements ScannerOcrAdapter {
 
     return {
       status: "ok",
-      regions: parsed.data.regions,
+      regions: parsed.data.regions.map((region) => ({
+        regionId: region.regionId,
+        text: region.text,
+        confidence: region.confidence,
+        durationMs: region.durationMs ?? 0,
+        cropWidth: region.cropWidth ?? 0,
+        cropHeight: region.cropHeight ?? 0,
+      })),
+      totalDurationMs: parsed.data.totalDurationMs ?? 0,
+      workerInitialized: parsed.data.workerInitialized ?? false,
     };
   }
 }

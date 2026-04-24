@@ -45,6 +45,9 @@ export type OcrRegionResult = {
   regionId: string;
   text: string;
   confidence: number;
+  durationMs: number;
+  cropWidth: number;
+  cropHeight: number;
 };
 
 export type ScannerOcrStatus = "ok" | "unavailable" | "timeout" | "error";
@@ -53,6 +56,8 @@ export type ScannerOcrRecognitionResult = {
   status: ScannerOcrStatus;
   regions: OcrRegionResult[];
   message?: string;
+  totalDurationMs?: number;
+  workerInitialized?: boolean;
 };
 
 export type ScannerCandidateMatch = {
@@ -75,6 +80,13 @@ export type ScannerScanResult = {
   candidates: ScannerCandidateMatch[];
   issues: ScannerIssue[];
   stages: ScannerStageReport[];
+  diagnostics: {
+    ocrDurationMs: number;
+    matchingDurationMs: number;
+    workerInitialized: boolean;
+    primaryCrop: { width: number; height: number } | null;
+    timeoutStage: "ocr" | "matching" | null;
+  };
 };
 
 export interface ScannerRegionDetector {

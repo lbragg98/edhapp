@@ -37,6 +37,11 @@ type ScannerDebugState = {
   lastCandidate: string | null;
   lastError: string | null;
   lastProcessingMs: number | null;
+  ocrDurationMs: number | null;
+  matchingDurationMs: number | null;
+  cropSize: string | null;
+  timeoutStage: "ocr" | "matching" | "network" | null;
+  workerInitialized: boolean;
 };
 
 type ScannerCandidate = {
@@ -73,6 +78,13 @@ type ScannerResponse = {
   candidates: ScannerCandidate[];
   issues: ScannerIssue[];
   stages: ScannerStage[];
+  diagnostics: {
+    ocrDurationMs: number;
+    matchingDurationMs: number;
+    workerInitialized: boolean;
+    primaryCrop: { width: number; height: number } | null;
+    timeoutStage: "ocr" | "matching" | null;
+  };
 };
 
 const stageLabel: Record<ScannerStage["stage"], string> = {
@@ -119,7 +131,20 @@ export function ScannerWorkspace() {
     lastCandidate: null,
     lastError: null,
     lastProcessingMs: null,
+    ocrDurationMs: null,
+    matchingDurationMs: null,
+    cropSize: null,
+    timeoutStage: null,
+    workerInitialized: false,
   });
+  const [frameIntervalMs, setFrameIntervalMs] = useState(() => {
+    if (typeof window === "undefined") {
+      return 2_000;
+    }
+    return window.matchMedia("(max-width: 768px)").matches ? 2_000 : 1_500;
+  });
+  const [consecutiveTimeouts, setConsecutiveTimeouts] = useState(0);
+  const [liveScanSuspended, setLiveScanSuspended] = useState(false);
 
   // Refs for scroll behavior
   const resultsRef = useRef<HTMLElement>(null);
@@ -197,7 +222,7 @@ export function ScannerWorkspace() {
 
       setScanStage("ocr");
       const controller = new AbortController();
-      const timeout = window.setTimeout(() => controller.abort(), 10_000);
+      const timeout = window.setTimeout(() => controller.abort(), 20_000);
       let response: Response;
       try {
         response = await fetch("/api/scanner/scan", {
@@ -254,8 +279,22 @@ export function ScannerWorkspace() {
       scanInFlightRef.current = false;
 
       const topCandidate = payload.data.candidates[0];
+      const hasTimeoutIssue = payload.data.issues.some((issue) => issue.code === "ocr_timeout");
       const hasNoText = payload.data.issues.some((issue) => issue.code === "no_text_detected" || issue.code === "ocr_empty");
       const isLowConfidence = payload.data.issues.some((issue) => issue.code === "low_confidence_match");
+
+      if (hasTimeoutIssue) {
+        setConsecutiveTimeouts((current) => {
+          const next = current + 1;
+          if (next >= 3) {
+            setLiveScanSuspended(true);
+          }
+          return next;
+        });
+        setFrameIntervalMs((current) => Math.min(current + 300, 3_000));
+      } else {
+        setConsecutiveTimeouts(0);
+      }
 
       if (hasNoText) {
         setLoopState("no-text-detected");
@@ -285,6 +324,13 @@ export function ScannerWorkspace() {
         lastCandidate: topCandidate?.card.name ?? null,
         lastError: null,
         lastProcessingMs: Math.round(performance.now() - startedAt),
+        ocrDurationMs: payload.data.diagnostics.ocrDurationMs,
+        matchingDurationMs: payload.data.diagnostics.matchingDurationMs,
+        cropSize: payload.data.diagnostics.primaryCrop
+          ? `${payload.data.diagnostics.primaryCrop.width}x${payload.data.diagnostics.primaryCrop.height}`
+          : null,
+        timeoutStage: payload.data.diagnostics.timeoutStage,
+        workerInitialized: payload.data.diagnostics.workerInitialized,
       });
 
       // Scroll to results on mobile
@@ -299,10 +345,21 @@ export function ScannerWorkspace() {
       setScanError(timedOut ? "Scanner timed out while reading the frame." : message);
       setIssues([{ code: timedOut ? "ocr_timeout" : "scan_error", message: timedOut ? "OCR timed out for this frame." : "Network error. Check your connection and try again." }]);
       setLoopState(timedOut ? "timeout" : "error");
+      if (timedOut) {
+        setConsecutiveTimeouts((current) => {
+          const next = current + 1;
+          if (next >= 3) {
+            setLiveScanSuspended(true);
+          }
+          return next;
+        });
+        setFrameIntervalMs((current) => Math.min(current + 300, 3_000));
+      }
       setDebugState((current) => ({
         ...current,
-        lastError: timedOut ? "Frame processing timeout (10s)" : message,
+        lastError: timedOut ? "Frame processing timeout (20s)" : message,
         lastProcessingMs: Math.round(performance.now() - startedAt),
+        timeoutStage: timedOut ? "network" : null,
       }));
       setIsScanning(false);
       scanInFlightRef.current = false;
@@ -379,6 +436,13 @@ export function ScannerWorkspace() {
           onRefresh={refresh}
           isScanning={isScanning}
           onLiveCameraStatusChange={setCameraState}
+          frameIntervalMs={frameIntervalMs}
+          liveScanSuspended={liveScanSuspended}
+          onResumeLiveScan={() => {
+            setLiveScanSuspended(false);
+            setConsecutiveTimeouts(0);
+            setFrameIntervalMs((current) => Math.max(1_500, current - 500));
+          }}
         />
 
         {/* Preview of captured/uploaded image */}
@@ -451,6 +515,18 @@ export function ScannerWorkspace() {
           <p className="text-xs text-[color:var(--text-subtle)]">Confidence: {debugState.lastConfidence !== null ? formatPercentRatio(debugState.lastConfidence) : "(n/a)"}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">Candidate: {debugState.lastCandidate ?? "(none)"}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">Frame time: {debugState.lastProcessingMs !== null ? `${debugState.lastProcessingMs}ms` : "(n/a)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">OCR duration: {debugState.ocrDurationMs !== null ? `${debugState.ocrDurationMs}ms` : "(n/a)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">Match duration: {debugState.matchingDurationMs !== null ? `${debugState.matchingDurationMs}ms` : "(n/a)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">OCR crop: {debugState.cropSize ?? "(n/a)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">Frame interval: {frameIntervalMs}ms</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">Timeout stage: {debugState.timeoutStage ?? "(none)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">Worker initialized: {debugState.workerInitialized ? "yes" : "no"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">Consecutive timeouts: {consecutiveTimeouts}</p>
+          {liveScanSuspended ? (
+            <p className="mt-1 text-xs text-amber-300">
+              Live scan paused due to repeated timeouts. Use manual search or resume scanning.
+            </p>
+          ) : null}
           {debugState.lastError ? (
             <p className="mt-1 text-xs text-rose-300">Error: {debugState.lastError}</p>
           ) : null}

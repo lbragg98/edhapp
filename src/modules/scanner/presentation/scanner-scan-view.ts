@@ -70,6 +70,18 @@ const scannerScanViewSchema = z.object({
       summary: z.string(),
     }),
   ),
+  diagnostics: z.object({
+    ocrDurationMs: z.number(),
+    matchingDurationMs: z.number(),
+    workerInitialized: z.boolean(),
+    primaryCrop: z
+      .object({
+        width: z.number(),
+        height: z.number(),
+      })
+      .nullable(),
+    timeoutStage: z.enum(["ocr", "matching"]).nullable(),
+  }),
 });
 
 export function toScannerScanView(result: ScannerScanResult) {

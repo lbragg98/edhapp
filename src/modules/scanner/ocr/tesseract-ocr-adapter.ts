@@ -10,7 +10,8 @@ import type {
 
 const { createWorker, PSM } = Tesseract;
 
-const OCR_TIMEOUT_MS = 9000;
+const OCR_TIMEOUT_MS = 12_000;
+const MAX_OCR_WIDTH = 800;
 
 function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
@@ -37,7 +38,7 @@ function toRectangle(
 async function cropRegionBuffer(
   image: ScannerProcessedImage,
   region: ScannerRegion,
-): Promise<Buffer> {
+): Promise<{ buffer: Buffer; width: number; height: number }> {
   const source = Buffer.from(image.bytes);
   const metadata = await sharp(source).metadata();
 
@@ -47,13 +48,25 @@ async function cropRegionBuffer(
 
   const rectangle = toRectangle(region, metadata.width, metadata.height);
 
-  return sharp(source)
-    .extract(rectangle)
+  const pipeline = sharp(source).extract(rectangle);
+  const resized = rectangle.width > MAX_OCR_WIDTH
+    ? pipeline.resize({ width: MAX_OCR_WIDTH, withoutEnlargement: true })
+    : pipeline;
+
+  const output = await resized
     .grayscale()
     .normalize()
     .sharpen()
+    .gamma(1.15)
     .png()
     .toBuffer();
+
+  const outputMeta = await sharp(output).metadata();
+  return {
+    buffer: output,
+    width: outputMeta.width ?? rectangle.width,
+    height: outputMeta.height ?? rectangle.height,
+  };
 }
 
 async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise<T> {
@@ -110,12 +123,14 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
 
     try {
       return await TesseractOcrAdapter.enqueue(async () => {
+        const startedAt = Date.now();
         const worker = await TesseractOcrAdapter.getWorker();
         const results: OcrRegionResult[] = [];
 
         for (const region of input.regions) {
+          const regionStartedAt = Date.now();
           const crop = await cropRegionBuffer(input.image, region);
-          const response = await withTimeout(worker.recognize(crop), OCR_TIMEOUT_MS);
+          const response = await withTimeout(worker.recognize(crop.buffer), OCR_TIMEOUT_MS);
 
           const text = response.data.text.trim();
           if (!text) {
@@ -126,12 +141,17 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
             regionId: region.id,
             text,
             confidence: Number(clamp01((response.data.confidence ?? 0) / 100).toFixed(4)),
+            durationMs: Date.now() - regionStartedAt,
+            cropWidth: crop.width,
+            cropHeight: crop.height,
           });
         }
 
         return {
           status: "ok" as const,
           regions: results,
+          totalDurationMs: Date.now() - startedAt,
+          workerInitialized: true,
         };
       });
     } catch (error) {
@@ -141,6 +161,7 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
           status: "timeout",
           regions: [],
           message: "OCR request timed out.",
+          workerInitialized: true,
         };
       }
 
@@ -149,6 +170,7 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
         status: "unavailable",
         regions: [],
         message,
+        workerInitialized: this.constructor === TesseractOcrAdapter ? Boolean(TesseractOcrAdapter.workerPromise) : false,
       };
     }
   }

@@ -17,6 +17,10 @@ export type LiveCameraStatus =
   | "error";
 
 type CaptureSource = "live";
+const GUIDE_WIDTH_RATIO = 0.65;
+const GUIDE_HEIGHT_RATIO = 0.85;
+const NAME_REGION_HEIGHT_RATIO = 0.2;
+const MAX_CAPTURE_WIDTH = 900;
 
 function canUseSecureCameraContext(): boolean {
   if (typeof window === "undefined") {
@@ -50,7 +54,7 @@ export function useLiveCameraScanner(input: {
   intervalMs?: number;
   onFrame: (file: File, compressionResult: CompressionResult, source: CaptureSource) => void;
 }) {
-  const { isScanning, onFrame, intervalMs = 900 } = input;
+  const { isScanning, onFrame, intervalMs = 2_000 } = input;
   const [status, setStatus] = useState<LiveCameraStatus>("idle");
   const [lastError, setLastError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -94,16 +98,42 @@ export function useLiveCameraScanner(input: {
     frameInFlightRef.current = true;
     try {
       const canvas = canvasRef.current;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+
+      const frameWidth = video.videoWidth;
+      const frameHeight = video.videoHeight;
+      const guideWidth = Math.floor(frameWidth * GUIDE_WIDTH_RATIO);
+      const guideHeight = Math.floor(frameHeight * GUIDE_HEIGHT_RATIO);
+      const guideLeft = Math.floor((frameWidth - guideWidth) / 2);
+      const guideTop = Math.floor((frameHeight - guideHeight) / 2);
+
+      const nameCropLeft = guideLeft;
+      const nameCropTop = guideTop;
+      const nameCropWidth = guideWidth;
+      const nameCropHeight = Math.max(16, Math.floor(guideHeight * NAME_REGION_HEIGHT_RATIO));
+
+      const outputWidth = Math.min(nameCropWidth, MAX_CAPTURE_WIDTH);
+      const outputHeight = Math.max(16, Math.floor(nameCropHeight * (outputWidth / nameCropWidth)));
+
+      canvas.width = outputWidth;
+      canvas.height = outputHeight;
       const context = canvas.getContext("2d");
       if (!context) {
         return;
       }
 
-      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      context.drawImage(
+        video,
+        nameCropLeft,
+        nameCropTop,
+        nameCropWidth,
+        nameCropHeight,
+        0,
+        0,
+        outputWidth,
+        outputHeight,
+      );
       const blob = await new Promise<Blob | null>((resolve) =>
-        canvas.toBlob(resolve, "image/jpeg", 0.86),
+        canvas.toBlob(resolve, "image/jpeg", 0.82),
       );
       if (!blob) {
         return;
@@ -124,6 +154,16 @@ export function useLiveCameraScanner(input: {
       frameInFlightRef.current = false;
     }
   }, [onFrame]);
+
+  const restartSampler = useCallback(() => {
+    if (status !== "camera-active") {
+      return;
+    }
+    frameSamplerRef.current?.stop();
+    const sampler = new FrameSampler();
+    sampler.start(sampleFrame, { intervalMs });
+    frameSamplerRef.current = sampler;
+  }, [intervalMs, sampleFrame, status]);
 
   const start = useCallback(async () => {
     console.info("[Scanner][camera] start button clicked");
@@ -209,6 +249,9 @@ export function useLiveCameraScanner(input: {
   }, [cleanupStream, intervalMs, sampleFrame]);
 
   useEffect(() => () => stop(), [stop]);
+  useEffect(() => {
+    restartSampler();
+  }, [intervalMs, restartSampler]);
 
   return {
     status,

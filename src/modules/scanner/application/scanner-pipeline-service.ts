@@ -9,6 +9,26 @@ import type {
   ScannerStageReport,
 } from "@/modules/scanner/domain/scanner-record";
 
+const MATCHING_TIMEOUT_MS = 4_500;
+
+async function withTimeout<T>(operation: Promise<T>, timeoutMs: number, code: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(code));
+    }, timeoutMs);
+
+    operation
+      .then((result) => {
+        clearTimeout(timer);
+        resolve(result);
+      })
+      .catch((error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
 export class ScannerPipelineService {
   constructor(
     private readonly dependencies: {
@@ -27,6 +47,7 @@ export class ScannerPipelineService {
       summary: `Image captured (${input.image.mimeType}).`,
     });
 
+    let timeoutStage: "ocr" | "matching" | null = null;
     const regions = await this.dependencies.detector.detect(input.image);
     stages.push({
       stage: "region_detection",
@@ -34,10 +55,12 @@ export class ScannerPipelineService {
       summary: regions.length > 0 ? `${regions.length} candidate region(s) found.` : "No candidate regions detected.",
     });
 
+    const ocrStartedAt = Date.now();
     const ocrRegions = await this.dependencies.ocrAdapter.recognize({
       image: input.image,
       regions,
     });
+    const ocrDurationMs = Date.now() - ocrStartedAt;
 
     const extractedText = [input.manualText?.trim() ?? "", ...ocrRegions.regions.map((entry) => entry.text.trim())]
       .filter(Boolean)
@@ -56,6 +79,7 @@ export class ScannerPipelineService {
         : 0;
 
     if (ocrRegions.status === "timeout") {
+      timeoutStage = "ocr";
       issues.push({
         code: "ocr_timeout",
         message: ocrRegions.message ?? "OCR timed out while reading the image.",
@@ -85,15 +109,35 @@ export class ScannerPipelineService {
         : ocrRegions.message ?? "No text extracted yet.",
     });
 
-    const resolved = likelyCardName
-      ? await resolveCardCandidate({
-          extractedText: likelyCardName,
-          extractionConfidence,
-        })
-      : {
-          status: "failed" as const,
-          candidates: [],
-        };
+    const matchingStartedAt = Date.now();
+    let resolved:
+      | Awaited<ReturnType<typeof resolveCardCandidate>>
+      | {
+          status: "failed";
+          candidates: [];
+        } = {
+      status: "failed",
+      candidates: [],
+    };
+
+    if (likelyCardName) {
+      try {
+        resolved = await withTimeout(
+          resolveCardCandidate({
+            extractedText: likelyCardName,
+            extractionConfidence,
+          }),
+          MATCHING_TIMEOUT_MS,
+          "MATCHING_TIMEOUT",
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "matching_failed";
+        if (message === "MATCHING_TIMEOUT" || message.toLowerCase().includes("aborted")) {
+          timeoutStage = "matching";
+        }
+      }
+    }
+    const matchingDurationMs = Date.now() - matchingStartedAt;
 
     const candidates = resolved.candidates;
 
@@ -124,7 +168,9 @@ export class ScannerPipelineService {
       summary:
         candidates.length > 0
           ? `${candidates.length} candidate(s) ranked (${resolved.status}).`
-          : "No confident card candidates found.",
+          : timeoutStage === "matching"
+            ? "Candidate matching timed out."
+            : "No confident card candidates found.",
     });
 
     return {
@@ -136,6 +182,15 @@ export class ScannerPipelineService {
       candidates,
       issues,
       stages,
+      diagnostics: {
+        ocrDurationMs,
+        matchingDurationMs,
+        workerInitialized: ocrRegions.workerInitialized ?? false,
+        primaryCrop: ocrRegions.regions[0]
+          ? { width: ocrRegions.regions[0].cropWidth, height: ocrRegions.regions[0].cropHeight }
+          : null,
+        timeoutStage,
+      },
     };
   }
 }

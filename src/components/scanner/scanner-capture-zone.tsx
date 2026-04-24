@@ -17,6 +17,9 @@ type ScannerCaptureZoneProps = {
   onRefresh: () => Promise<void>;
   isScanning: boolean;
   onLiveCameraStatusChange?: (status: string) => void;
+  frameIntervalMs?: number;
+  liveScanSuspended?: boolean;
+  onResumeLiveScan?: () => void;
 };
 
 /**
@@ -32,6 +35,9 @@ export function ScannerCaptureZone({
   onRefresh,
   isScanning,
   onLiveCameraStatusChange,
+  frameIntervalMs = 2_000,
+  liveScanSuspended = false,
+  onResumeLiveScan,
 }: ScannerCaptureZoneProps) {
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressionInfo, setCompressionInfo] = useState<CompressionResult | null>(null);
@@ -47,7 +53,7 @@ export function ScannerCaptureZone({
     isActive: isLiveCameraActive,
   } = useLiveCameraScanner({
     isScanning,
-    intervalMs: 900,
+    intervalMs: frameIntervalMs,
     onFrame: onFileSelected,
   });
 
@@ -110,6 +116,12 @@ export function ScannerCaptureZone({
   useEffect(() => {
     onLiveCameraStatusChange?.(liveCameraStatus);
   }, [liveCameraStatus, onLiveCameraStatusChange]);
+
+  useEffect(() => {
+    if (liveScanSuspended && isLiveCameraActive) {
+      stopLiveCamera();
+    }
+  }, [isLiveCameraActive, liveScanSuspended, stopLiveCamera]);
 
   // Permission denied state
   if (error?.code === "permission_denied" || capabilities?.permissionState === "denied") {
@@ -248,11 +260,22 @@ export function ScannerCaptureZone({
       <div className="mt-4 flex gap-2">
         <button
           type="button"
-          onClick={isLiveCameraActive ? stopLiveCamera : () => void startLiveCamera()}
+          onClick={
+            liveScanSuspended
+              ? onResumeLiveScan
+              : isLiveCameraActive
+                ? stopLiveCamera
+                : () => void startLiveCamera()
+          }
           disabled={isDetecting || isCompressing}
           className="nav-link nav-link-active flex-1 justify-center"
         >
-          {isLiveCameraActive ? (
+          {liveScanSuspended ? (
+            <>
+              <Play size={14} className="mr-1.5" />
+              Resume Live Scan
+            </>
+          ) : isLiveCameraActive ? (
             <>
               <Pause size={14} className="mr-1.5" />
               Stop Live Scan
@@ -289,6 +312,12 @@ export function ScannerCaptureZone({
           Camera Status
         </p>
         <p className="mt-1 text-xs text-zinc-200">{liveCameraStatus}</p>
+        <p className="text-xs text-[color:var(--text-subtle)]">Frame interval: {frameIntervalMs}ms</p>
+        {liveScanSuspended ? (
+          <p className="mt-1 text-xs text-amber-300">
+            Live scan paused after repeated timeouts. Resume or use manual search.
+          </p>
+        ) : null}
         {liveCameraLastError ? (
           <p className="mt-1 text-xs text-rose-300">{liveCameraLastError}</p>
         ) : null}
