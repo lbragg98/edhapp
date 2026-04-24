@@ -39,6 +39,7 @@ type DeckEditorWorkspaceProps = {
   initialIntelligence: DeckIntelligenceReport;
 };
 type WorkspaceView = "deckbuilder" | "analytics" | "playtest" | "upgrades";
+type MobileDeckTab = "deck" | "add" | "suggestions" | "stats" | "settings";
 
 function useDebouncedValue<T>(value: T, delay: number): T {
   const [debouncedValue, setDebouncedValue] = useState(value);
@@ -209,6 +210,9 @@ export function DeckEditorWorkspace({
   const [isDraggingMainboard, setIsDraggingMainboard] = useState(false);
   const [reviewTab, setReviewTab] = useState<"analytics" | "validation" | "guidance" | "playtest">("analytics");
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("deckbuilder");
+  const [mobileDeckTab, setMobileDeckTab] = useState<MobileDeckTab>("deck");
+  const [showSourceFilters, setShowSourceFilters] = useState(false);
+  const [showDeckFilters, setShowDeckFilters] = useState(false);
   const [mutationError, setMutationError] = useState<string | null>(null);
   const sourcePanelRef = useRef<HTMLDivElement | null>(null);
   const sourceSearchInputRef = useRef<HTMLInputElement | null>(null);
@@ -564,9 +568,19 @@ export function DeckEditorWorkspace({
     }
   }
 
+  function switchMobileDeckTab(next: MobileDeckTab) {
+    setMobileDeckTab(next);
+    if (next === "suggestions") {
+      handleReviewTabChange("guidance");
+    }
+    if (next === "stats") {
+      handleReviewTabChange("analytics");
+    }
+  }
+
   return (
-    <div className="space-y-5">
-      <section className="surface-panel p-2">
+    <div className="min-h-[100dvh] space-y-5 overflow-x-hidden pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
+      <section className="hidden surface-panel p-2 md:block">
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -606,7 +620,10 @@ export function DeckEditorWorkspace({
 
       <div className={workspaceView === "deckbuilder" ? "" : "hidden"}>
         <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
-          <aside ref={sourcePanelRef} className="space-y-5">
+          <aside
+            ref={sourcePanelRef}
+            className={`space-y-5 ${mobileDeckTab === "add" ? "" : "hidden"} xl:block`}
+          >
             <section className="surface-panel p-5 sm:p-6">
               <p className="type-label">Source Mode</p>
               <div className="mt-3 flex gap-2">
@@ -637,7 +654,13 @@ export function DeckEditorWorkspace({
                   className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-4 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
                 />
               </label>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <div className="mt-3 flex items-center justify-between gap-2 md:hidden">
+                <p className="text-xs text-[color:var(--text-subtle)]">Filters</p>
+                <button type="button" className="nav-link" onClick={() => setShowSourceFilters(true)}>
+                  Edit Filters
+                </button>
+              </div>
+              <div className="mt-3 hidden gap-2 md:grid md:grid-cols-3">
                 <select
                   value={sourceFilters.type}
                   onChange={(event) => setSourceFilters((current) => ({ ...current, type: event.target.value as PanelFilters["type"] }))}
@@ -738,9 +761,9 @@ export function DeckEditorWorkspace({
             </section>
           </aside>
 
-          <section className="space-y-5">
+          <section className={`space-y-5 ${mobileDeckTab === "add" ? "hidden xl:block" : ""}`}>
             {isEmptyDeck ? (
-              <section className="surface-panel p-5 sm:p-6">
+              <section className={`surface-panel p-5 sm:p-6 ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}>
                 <p className="type-label">Start Building</p>
                 <h3 className="type-title mt-2">This deck is ready for its first cards.</h3>
                 <p className="type-body-muted mt-2">
@@ -756,7 +779,7 @@ export function DeckEditorWorkspace({
                 </div>
               </section>
             ) : null}
-            <section className="surface-panel p-5 sm:p-6">
+            <section className={`surface-panel p-5 sm:p-6 ${mobileDeckTab === "deck" || mobileDeckTab === "settings" ? "" : "hidden xl:block"}`}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="type-label">Deck Metadata</p>
@@ -765,11 +788,32 @@ export function DeckEditorWorkspace({
                 </div>
                 <ValueEstimateChip label="Deck Value" estimate={deckValueEstimate} />
               </div>
+              {mobileDeckTab === "settings" ? (
+                <div className="mt-4 rounded-xl border border-[color:var(--surface-border)] bg-white/[0.02] p-3">
+                  <p className="type-label">Source Mode</p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      className={`nav-link ${sourceMode === "library" ? "nav-link-active" : ""}`}
+                      onClick={() => setMode("library")}
+                    >
+                      Library
+                    </button>
+                    <button
+                      type="button"
+                      className={`nav-link ${sourceMode === "all" ? "nav-link-active" : ""}`}
+                      onClick={() => setMode("all")}
+                    >
+                      All Cards
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               <DeckMetadataEditor deck={deck} onSave={saveMetadata} />
             </section>
 
             <section
-              className={`surface-panel p-5 sm:p-6 ${isDraggingCommander ? "border-white/30" : ""}`}
+              className={`surface-panel p-5 sm:p-6 ${isDraggingCommander ? "border-white/30" : ""} ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}
               onDragOver={(event) => {
                 event.preventDefault();
                 setIsDraggingCommander(true);
@@ -790,9 +834,12 @@ export function DeckEditorWorkspace({
                   <button type="button" className="nav-link" disabled={selectedDeck.size === 0 || isBulkMutating} onClick={() => void bulkRemove()}>
                     Bulk Remove
                   </button>
+                  <button type="button" className="nav-link md:hidden" onClick={() => setShowDeckFilters(true)}>
+                    Filters
+                  </button>
                 </div>
               </div>
-              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              <div className="mt-3 hidden gap-2 md:grid md:grid-cols-3">
                 <select
                   value={deckFilters.type}
                   onChange={(event) => setDeckFilters((current) => ({ ...current, type: event.target.value as PanelFilters["type"] }))}
@@ -856,7 +903,7 @@ export function DeckEditorWorkspace({
             </section>
 
             <section
-              className={`surface-panel p-5 sm:p-6 ${isDraggingMainboard ? "border-white/30" : ""}`}
+              className={`surface-panel p-5 sm:p-6 ${isDraggingMainboard ? "border-white/30" : ""} ${mobileDeckTab === "deck" ? "" : "hidden xl:block"}`}
               onDragOver={(event) => {
                 event.preventDefault();
                 setIsDraggingMainboard(true);
@@ -894,20 +941,116 @@ export function DeckEditorWorkspace({
         </div>
       </div>
 
-      <DeckReviewPanel
-        analytics={analytics}
-        validation={validation}
-        intelligence={intelligence}
-        playtest={playtest}
-        isRunningPlaytest={isRunningPlaytest}
-        onRunPlaytest={runPlaytest}
-        upgrades={upgrades}
-        upgradeMode={upgradeMode}
-        isLoadingUpgrades={isLoadingUpgrades}
-        onLoadUpgrades={loadUpgrades}
-        activeTab={reviewTab}
-        onChangeTab={handleReviewTabChange}
-      />
+      <div className={`${mobileDeckTab === "suggestions" || mobileDeckTab === "stats" ? "" : "hidden"} xl:block`}>
+        <DeckReviewPanel
+          analytics={analytics}
+          validation={validation}
+          intelligence={intelligence}
+          playtest={playtest}
+          isRunningPlaytest={isRunningPlaytest}
+          onRunPlaytest={runPlaytest}
+          upgrades={upgrades}
+          upgradeMode={upgradeMode}
+          isLoadingUpgrades={isLoadingUpgrades}
+          onLoadUpgrades={loadUpgrades}
+          activeTab={reviewTab}
+          onChangeTab={handleReviewTabChange}
+        />
+      </div>
+
+      {showSourceFilters ? (
+        <div className="fixed inset-0 z-40 bg-black/60 md:hidden">
+          <div className="absolute inset-x-0 bottom-0 rounded-t-2xl border border-[color:var(--surface-border)] bg-[#090b13] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="type-label">Source Filters</p>
+              <button type="button" className="nav-link" onClick={() => setShowSourceFilters(false)}>Done</button>
+            </div>
+            <div className="grid gap-2">
+              <select
+                value={sourceFilters.type}
+                onChange={(event) => setSourceFilters((current) => ({ ...current, type: event.target.value as PanelFilters["type"] }))}
+                className="rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-xs text-zinc-100"
+              >
+                {TYPE_FILTERS.map((type) => <option key={type} value={type} className="bg-zinc-900">{type}</option>)}
+              </select>
+              <input
+                placeholder="Max CMC"
+                type="number"
+                min={0}
+                max={20}
+                value={sourceFilters.maxCmc ?? ""}
+                onChange={(event) =>
+                  setSourceFilters((current) => ({
+                    ...current,
+                    maxCmc: event.target.value ? Math.max(0, Math.min(20, Number(event.target.value) || 0)) : null,
+                  }))
+                }
+                className="rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-xs text-zinc-100"
+              />
+              <select
+                value={sourceFilters.color ?? ""}
+                onChange={(event) => setSourceFilters((current) => ({ ...current, color: (event.target.value || null) as CardColor | null }))}
+                className="rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-xs text-zinc-100"
+              >
+                <option value="" className="bg-zinc-900">Any Color</option>
+                {["W", "U", "B", "R", "G"].map((color) => <option key={color} value={color} className="bg-zinc-900">{color}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {showDeckFilters ? (
+        <div className="fixed inset-0 z-40 bg-black/60 md:hidden">
+          <div className="absolute inset-x-0 bottom-0 rounded-t-2xl border border-[color:var(--surface-border)] bg-[#090b13] p-4">
+            <div className="mb-3 flex items-center justify-between">
+              <p className="type-label">Deck Filters</p>
+              <button type="button" className="nav-link" onClick={() => setShowDeckFilters(false)}>Done</button>
+            </div>
+            <div className="grid gap-2">
+              <select
+                value={deckFilters.type}
+                onChange={(event) => setDeckFilters((current) => ({ ...current, type: event.target.value as PanelFilters["type"] }))}
+                className="rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-xs text-zinc-100"
+              >
+                {TYPE_FILTERS.map((type) => <option key={type} value={type} className="bg-zinc-900">{type}</option>)}
+              </select>
+              <input
+                placeholder="Max CMC"
+                type="number"
+                min={0}
+                max={20}
+                value={deckFilters.maxCmc ?? ""}
+                onChange={(event) =>
+                  setDeckFilters((current) => ({
+                    ...current,
+                    maxCmc: event.target.value ? Math.max(0, Math.min(20, Number(event.target.value) || 0)) : null,
+                  }))
+                }
+                className="rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-xs text-zinc-100"
+              />
+              <select
+                value={deckFilters.color ?? ""}
+                onChange={(event) => setDeckFilters((current) => ({ ...current, color: (event.target.value || null) as CardColor | null }))}
+                className="rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-xs text-zinc-100"
+              >
+                <option value="" className="bg-zinc-900">Any Color</option>
+                {["W", "U", "B", "R", "G"].map((color) => <option key={color} value={color} className="bg-zinc-900">{color}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-[color:var(--surface-border)] bg-[#090b13]/95 px-2 pb-[env(safe-area-inset-bottom)] pt-2 md:hidden">
+        <div className="grid grid-cols-5 gap-1">
+          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "deck" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("deck")}>Deck</button>
+          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "add" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("add")}>Add Cards</button>
+          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "suggestions" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("suggestions")}>Suggestions</button>
+          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "stats" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("stats")}>Stats</button>
+          <button type="button" className={`nav-link justify-center text-xs ${mobileDeckTab === "settings" ? "nav-link-active" : ""}`} onClick={() => switchMobileDeckTab("settings")}>Settings</button>
+        </div>
+      </nav>
     </div>
   );
 }

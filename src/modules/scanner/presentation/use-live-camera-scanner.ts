@@ -4,7 +4,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CompressionResult } from "@/modules/scanner/application/compress-image";
 import { CameraStreamController } from "@/modules/scanner/camera/camera-stream-controller";
 import { FrameSampler } from "@/modules/scanner/camera/frame-sampler";
+import { FrameStabilityDetector } from "@/modules/scanner/camera/stability-detector";
 import { mapCameraError } from "@/modules/scanner/domain/camera-capabilities";
+import { computeCardGuideRegion } from "@/modules/scanner/recognition/card-region-cropper";
+import { computeNameBarRegion } from "@/modules/scanner/recognition/name-bar-cropper";
 
 export type LiveCameraStatus =
   | "idle"
@@ -17,10 +20,9 @@ export type LiveCameraStatus =
   | "error";
 
 type CaptureSource = "live";
-const GUIDE_WIDTH_RATIO = 0.65;
-const GUIDE_HEIGHT_RATIO = 0.85;
-const NAME_REGION_HEIGHT_RATIO = 0.2;
 const MAX_CAPTURE_WIDTH = 900;
+const STABLE_SIGNATURE_SIZE = 20;
+const REPEAT_FRAME_COOLDOWN_MS = 4_000;
 
 function canUseSecureCameraContext(): boolean {
   if (typeof window === "undefined") {
@@ -63,6 +65,10 @@ export function useLiveCameraScanner(input: {
   const frameSamplerRef = useRef<FrameSampler | null>(null);
   const frameInFlightRef = useRef(false);
   const isScanningRef = useRef(isScanning);
+  const stabilityDetectorRef = useRef(new FrameStabilityDetector({ minStableFrames: 3, maxAverageDelta: 6.5 }));
+  const stabilityCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const lastStableSignatureRef = useRef<Uint8ClampedArray | null>(null);
+  const lastFrameEmissionAtRef = useRef(0);
 
   useEffect(() => {
     isScanningRef.current = isScanning;
@@ -76,6 +82,9 @@ export function useLiveCameraScanner(input: {
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    stabilityDetectorRef.current.reset();
+    lastStableSignatureRef.current = null;
+    lastFrameEmissionAtRef.current = 0;
     frameInFlightRef.current = false;
   }, []);
 
@@ -98,21 +107,62 @@ export function useLiveCameraScanner(input: {
     frameInFlightRef.current = true;
     try {
       const canvas = canvasRef.current;
-
       const frameWidth = video.videoWidth;
       const frameHeight = video.videoHeight;
-      const guideWidth = Math.floor(frameWidth * GUIDE_WIDTH_RATIO);
-      const guideHeight = Math.floor(frameHeight * GUIDE_HEIGHT_RATIO);
-      const guideLeft = Math.floor((frameWidth - guideWidth) / 2);
-      const guideTop = Math.floor((frameHeight - guideHeight) / 2);
+      const guideRegion = computeCardGuideRegion(frameWidth, frameHeight);
+      const nameBarRegion = computeNameBarRegion(guideRegion, { nameBarHeightRatio: 0.2 });
 
-      const nameCropLeft = guideLeft;
-      const nameCropTop = guideTop;
-      const nameCropWidth = guideWidth;
-      const nameCropHeight = Math.max(16, Math.floor(guideHeight * NAME_REGION_HEIGHT_RATIO));
+      const stabilityCanvas = stabilityCanvasRef.current ?? document.createElement("canvas");
+      stabilityCanvasRef.current = stabilityCanvas;
+      stabilityCanvas.width = STABLE_SIGNATURE_SIZE;
+      stabilityCanvas.height = STABLE_SIGNATURE_SIZE;
+      const stabilityContext = stabilityCanvas.getContext("2d");
+      if (!stabilityContext) {
+        return;
+      }
+      stabilityContext.drawImage(
+        video,
+        guideRegion.left,
+        guideRegion.top,
+        guideRegion.width,
+        guideRegion.height,
+        0,
+        0,
+        STABLE_SIGNATURE_SIZE,
+        STABLE_SIGNATURE_SIZE,
+      );
+      const signatureImage = stabilityContext.getImageData(0, 0, STABLE_SIGNATURE_SIZE, STABLE_SIGNATURE_SIZE);
+      const signature = new Uint8ClampedArray(STABLE_SIGNATURE_SIZE * STABLE_SIGNATURE_SIZE);
+      for (let offset = 0, pixel = 0; offset < signatureImage.data.length; offset += 4, pixel += 1) {
+        signature[pixel] = Math.round(
+          signatureImage.data[offset]! * 0.2126 +
+            signatureImage.data[offset + 1]! * 0.7152 +
+            signatureImage.data[offset + 2]! * 0.0722,
+        );
+      }
 
-      const outputWidth = Math.min(nameCropWidth, MAX_CAPTURE_WIDTH);
-      const outputHeight = Math.max(16, Math.floor(nameCropHeight * (outputWidth / nameCropWidth)));
+      const stability = stabilityDetectorRef.current.update(signature);
+      if (!stability.isStable) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastFrameEmissionAtRef.current < REPEAT_FRAME_COOLDOWN_MS) {
+        const previousSignature = lastStableSignatureRef.current;
+        if (previousSignature && previousSignature.length === signature.length) {
+          let delta = 0;
+          for (let index = 0; index < signature.length; index += 1) {
+            delta += Math.abs(signature[index]! - previousSignature[index]!);
+          }
+          const averageDelta = delta / signature.length;
+          if (averageDelta < 4.5) {
+            return;
+          }
+        }
+      }
+
+      const outputWidth = Math.min(nameBarRegion.width, MAX_CAPTURE_WIDTH);
+      const outputHeight = Math.max(16, Math.floor(nameBarRegion.height * (outputWidth / nameBarRegion.width)));
 
       canvas.width = outputWidth;
       canvas.height = outputHeight;
@@ -123,10 +173,10 @@ export function useLiveCameraScanner(input: {
 
       context.drawImage(
         video,
-        nameCropLeft,
-        nameCropTop,
-        nameCropWidth,
-        nameCropHeight,
+        nameBarRegion.left,
+        nameBarRegion.top,
+        nameBarRegion.width,
+        nameBarRegion.height,
         0,
         0,
         outputWidth,
@@ -150,6 +200,8 @@ export function useLiveCameraScanner(input: {
         ratio: 1,
       };
       onFrame(file, result, "live");
+      lastStableSignatureRef.current = signature;
+      lastFrameEmissionAtRef.current = now;
     } finally {
       frameInFlightRef.current = false;
     }

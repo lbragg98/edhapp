@@ -1,5 +1,5 @@
 import sharp from "sharp";
-import Tesseract from "tesseract.js";
+import { getSharedOcrWorker } from "@/modules/scanner/ocr/ocr-worker";
 import type {
   OcrRegionResult,
   ScannerOcrAdapter,
@@ -7,8 +7,6 @@ import type {
   ScannerProcessedImage,
   ScannerRegion,
 } from "@/modules/scanner/domain/scanner-record";
-
-const { createWorker, PSM } = Tesseract;
 
 const OCR_TIMEOUT_MS = 12_000;
 const MAX_OCR_WIDTH = 800;
@@ -88,20 +86,7 @@ async function withTimeout<T>(operation: Promise<T>, timeoutMs: number): Promise
 }
 
 export class TesseractOcrAdapter implements ScannerOcrAdapter {
-  private static workerPromise: ReturnType<typeof createWorker> | null = null;
   private static queue: Promise<void> = Promise.resolve();
-
-  private static async getWorker() {
-    if (!this.workerPromise) {
-      this.workerPromise = createWorker("eng");
-      const worker = await this.workerPromise;
-      await worker.setParameters({
-        tessedit_pageseg_mode: PSM.SINGLE_LINE,
-      });
-    }
-
-    return this.workerPromise;
-  }
 
   private static enqueue<T>(task: () => Promise<T>): Promise<T> {
     const run = this.queue.then(task, task);
@@ -124,7 +109,7 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
     try {
       return await TesseractOcrAdapter.enqueue(async () => {
         const startedAt = Date.now();
-        const worker = await TesseractOcrAdapter.getWorker();
+        const worker = await getSharedOcrWorker();
         const results: OcrRegionResult[] = [];
 
         for (const region of input.regions) {
@@ -170,7 +155,7 @@ export class TesseractOcrAdapter implements ScannerOcrAdapter {
         status: "unavailable",
         regions: [],
         message,
-        workerInitialized: this.constructor === TesseractOcrAdapter ? Boolean(TesseractOcrAdapter.workerPromise) : false,
+        workerInitialized: true,
       };
     }
   }

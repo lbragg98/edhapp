@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFImage } from "pdf-lib";
 import {
-  centeredGridOrigin,
+  calibrationLayout,
   GRID,
   gridLayoutPoints,
   GUIDE,
@@ -30,13 +30,17 @@ async function embedCardImage(pdf: PDFDocument, image: ResolvedPrintableImage): 
   return pdf.embedJpg(image.bytes);
 }
 
-function drawCutGuides(page: ReturnType<PDFDocument["addPage"]>) {
-  const xStart = centeredGridOrigin.x;
-  const yStart = centeredGridOrigin.y;
-  const xEnd = xStart + gridLayoutPoints.width;
-  const yEnd = yStart + gridLayoutPoints.height;
+function drawCutGuides(
+  page: ReturnType<PDFDocument["addPage"]>,
+  grid: { columns: number; rows: number },
+  origin: { x: number; y: number },
+) {
+  const xStart = origin.x;
+  const yStart = origin.y;
+  const xEnd = xStart + grid.columns * pageLayoutPoints.cardWidth;
+  const yEnd = yStart + grid.rows * pageLayoutPoints.cardHeight;
 
-  for (let column = 0; column <= GRID.columns; column += 1) {
+  for (let column = 0; column <= grid.columns; column += 1) {
     const x = xStart + column * pageLayoutPoints.cardWidth;
 
     page.drawLine({
@@ -48,7 +52,7 @@ function drawCutGuides(page: ReturnType<PDFDocument["addPage"]>) {
     });
   }
 
-  for (let row = 0; row <= GRID.rows; row += 1) {
+  for (let row = 0; row <= grid.rows; row += 1) {
     const y = yStart + row * pageLayoutPoints.cardHeight;
 
     page.drawLine({
@@ -61,11 +65,94 @@ function drawCutGuides(page: ReturnType<PDFDocument["addPage"]>) {
   }
 }
 
+function selectGridCapacity() {
+  const canFitThreeByThree =
+    gridLayoutPoints.width + GUIDE.crosshairExtensionPoints * 2 <= pageLayoutPoints.pageWidth &&
+    gridLayoutPoints.height + GUIDE.crosshairExtensionPoints * 2 <= pageLayoutPoints.pageHeight;
+
+  if (canFitThreeByThree) {
+    return { columns: GRID.columns, rows: GRID.rows, cardsPerPage: GRID.columns * GRID.rows };
+  }
+
+  // Never shrink card dimensions; reduce cards per page if needed.
+  const columns = 2;
+  const rows = 3;
+  return { columns, rows, cardsPerPage: columns * rows };
+}
+
+function drawPrintSizingNote(page: ReturnType<PDFDocument["addPage"]>, font: Awaited<ReturnType<PDFDocument["embedFont"]>>) {
+  page.drawText("Print at 100% / Actual size. Disable 'Fit to page'.", {
+    x: 24,
+    y: 18,
+    size: 9,
+    color: rgb(0.85, 0.85, 0.85),
+    font,
+  });
+}
+
+function drawCalibrationPage(page: ReturnType<PDFDocument["addPage"]>, font: Awaited<ReturnType<PDFDocument["embedFont"]>>) {
+  const centerX = pageLayoutPoints.pageWidth / 2;
+  const centerY = pageLayoutPoints.pageHeight / 2;
+  const outlineX = centerX - calibrationLayout.cardOutlineWidth / 2;
+  const outlineY = centerY - calibrationLayout.cardOutlineHeight / 2;
+
+  page.drawText("Calibration Page", {
+    x: 24,
+    y: pageLayoutPoints.pageHeight - 30,
+    size: 16,
+    color: rgb(0.94, 0.94, 0.94),
+    font,
+  });
+  page.drawText("Card outline is exactly 63mm x 88mm (178.58pt x 249.45pt).", {
+    x: 24,
+    y: pageLayoutPoints.pageHeight - 48,
+    size: 10,
+    color: rgb(0.8, 0.8, 0.8),
+    font,
+  });
+  drawPrintSizingNote(page, font);
+
+  page.drawRectangle({
+    x: outlineX,
+    y: outlineY,
+    width: calibrationLayout.cardOutlineWidth,
+    height: calibrationLayout.cardOutlineHeight,
+    borderColor: rgb(0.8, 0.8, 0.8),
+    borderWidth: 1,
+  });
+
+  const lineX = centerX - calibrationLayout.referenceLinePoints / 2;
+  const lineY = outlineY - 36;
+  page.drawLine({
+    start: { x: lineX, y: lineY },
+    end: { x: lineX + calibrationLayout.referenceLinePoints, y: lineY },
+    thickness: 1.5,
+    color: rgb(0.85, 0.85, 0.85),
+  });
+  page.drawText("1 inch reference line", {
+    x: lineX,
+    y: lineY - 12,
+    size: 9,
+    color: rgb(0.8, 0.8, 0.8),
+    font,
+  });
+}
+
 export async function renderPlaytestPdf(images: ResolvedPrintableImage[]): Promise<Uint8Array> {
   const pdf = await PDFDocument.create();
   const fallbackFont = await pdf.embedFont(StandardFonts.Helvetica);
+  const grid = selectGridCapacity();
+  const gridWidth = grid.columns * pageLayoutPoints.cardWidth;
+  const gridHeight = grid.rows * pageLayoutPoints.cardHeight;
+  const gridOrigin = {
+    x: (pageLayoutPoints.pageWidth - gridWidth) / 2,
+    y: (pageLayoutPoints.pageHeight - gridHeight) / 2,
+  };
 
-  const pages = chunk(images, gridLayoutPoints.cardsPerPage);
+  const calibrationPage = pdf.addPage([pageLayoutPoints.pageWidth, pageLayoutPoints.pageHeight]);
+  drawCalibrationPage(calibrationPage, fallbackFont);
+
+  const pages = chunk(images, grid.cardsPerPage);
 
   for (const pageCards of pages) {
     const page = pdf.addPage([pageLayoutPoints.pageWidth, pageLayoutPoints.pageHeight]);
@@ -76,11 +163,11 @@ export async function renderPlaytestPdf(images: ResolvedPrintableImage[]): Promi
         continue;
       }
 
-      const column = slot % GRID.columns;
-      const rowFromTop = Math.floor(slot / GRID.columns);
+      const column = slot % grid.columns;
+      const rowFromTop = Math.floor(slot / grid.columns);
 
-      const x = centeredGridOrigin.x + column * pageLayoutPoints.cardWidth;
-      const y = centeredGridOrigin.y + (GRID.rows - rowFromTop - 1) * pageLayoutPoints.cardHeight;
+      const x = gridOrigin.x + column * pageLayoutPoints.cardWidth;
+      const y = gridOrigin.y + (grid.rows - rowFromTop - 1) * pageLayoutPoints.cardHeight;
 
       const embedded = await embedCardImage(pdf, card);
 
@@ -113,7 +200,8 @@ export async function renderPlaytestPdf(images: ResolvedPrintableImage[]): Promi
       }
     }
 
-    drawCutGuides(page);
+    drawCutGuides(page, grid, gridOrigin);
+    drawPrintSizingNote(page, fallbackFont);
   }
 
   return pdf.save();
