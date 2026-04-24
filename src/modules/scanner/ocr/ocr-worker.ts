@@ -1,4 +1,7 @@
 import Tesseract from "tesseract.js";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import { env } from "@/server/config/env";
 
 const { createWorker, PSM } = Tesseract;
@@ -56,10 +59,21 @@ function detectFailureStage(message: string): OcrFailureStage {
 }
 
 function buildWorkerOptions() {
+  const cachePath = env.SCANNER_TESSERACT_CACHE_PATH || path.join(os.tmpdir(), "tesseract-cache");
+  try {
+    fs.mkdirSync(cachePath, { recursive: true });
+  } catch (error) {
+    console.warn("[Scanner][ocr] Failed to ensure Tesseract cache path; falling back to library default.", {
+      cachePath,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+  }
+
   return {
     ...(env.SCANNER_TESSERACT_LANG_PATH ? { langPath: env.SCANNER_TESSERACT_LANG_PATH } : {}),
     ...(env.SCANNER_TESSERACT_CORE_PATH ? { corePath: env.SCANNER_TESSERACT_CORE_PATH } : {}),
     ...(env.SCANNER_TESSERACT_WORKER_PATH ? { workerPath: env.SCANNER_TESSERACT_WORKER_PATH } : {}),
+    cachePath,
   };
 }
 
@@ -104,6 +118,7 @@ function ensureInitializationStarted() {
         langPath: env.SCANNER_TESSERACT_LANG_PATH ?? "default",
         corePath: env.SCANNER_TESSERACT_CORE_PATH ?? "default",
         workerPath: env.SCANNER_TESSERACT_WORKER_PATH ?? "default",
+        cachePath: env.SCANNER_TESSERACT_CACHE_PATH ?? path.join(os.tmpdir(), "tesseract-cache"),
       });
     });
 }

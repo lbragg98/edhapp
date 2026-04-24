@@ -13,6 +13,7 @@ const environmentSchema = z.object({
   SCANNER_TESSERACT_LANG_PATH: z.string().min(1).optional(),
   SCANNER_TESSERACT_CORE_PATH: z.string().min(1).optional(),
   SCANNER_TESSERACT_WORKER_PATH: z.string().min(1).optional(),
+  SCANNER_TESSERACT_CACHE_PATH: z.string().min(1).optional(),
 });
 
 const parsedEnvironment = environmentSchema.safeParse(process.env);
