@@ -1,59 +1,64 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import type { DeckRecord } from "@/modules/deck";
-
-type CreateDeckResponse = {
-  data: {
-    deck: DeckRecord;
-  };
-};
+import { parseDeckWorkspaceResponse } from "@/modules/deck";
 
 type DeckCreatePanelProps = {
   onCreated?: (deck: DeckRecord) => void;
 };
 
 export function DeckCreatePanel({ onCreated }: DeckCreatePanelProps) {
+  const router = useRouter();
   const [name, setName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function createDeck() {
-    if (!name.trim()) {
+    if (!name.trim() || isSubmitting) {
       return;
     }
 
     setIsSubmitting(true);
     setError(null);
 
-    const response = await fetch("/api/decks", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name.trim(),
-        sourceMode: "all",
-      }),
-    });
+    try {
+      const response = await fetch("/api/decks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          sourceMode: "all",
+        }),
+      });
 
-    if (!response.ok) {
-      try {
-        const payload = (await response.json()) as { error?: string };
-        if (typeof payload.error === "string" && payload.error.length > 0) {
+      const rawPayload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const payload = rawPayload as { error?: string } | null;
+        if (payload && typeof payload.error === "string" && payload.error.length > 0) {
           setError(payload.error);
         } else {
           setError("Failed to create deck.");
         }
-      } catch {
-        setError("Failed to create deck.");
+        return;
       }
-      setIsSubmitting(false);
-      return;
-    }
 
-    const payload = (await response.json()) as CreateDeckResponse;
-    setName("");
-    setIsSubmitting(false);
-    onCreated?.(payload.data.deck);
+      const payload = parseDeckWorkspaceResponse(rawPayload, "deck_create_panel");
+      if (!payload) {
+        setError("Deck created but response was invalid. Please refresh.");
+        return;
+      }
+
+      setName("");
+      onCreated?.(payload.deck);
+      router.push(`/decks/${payload.deck.id}`);
+    } catch {
+      setError("Failed to create deck.");
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   return (

@@ -70,6 +70,20 @@ export type DeckWithValidation = {
   intelligence: Awaited<ReturnType<typeof buildDeckIntelligence>>;
 };
 
+function buildFallbackIntelligence(sourceMode: DeckSourceMode): Awaited<ReturnType<typeof buildDeckIntelligence>> {
+  return {
+    sourceMode,
+    generatedAt: new Date().toISOString(),
+    recommendations: [],
+    synergies: [],
+    combos: [],
+    extensionPoints: {
+      playtestSimulationHook: "deck_intelligence_v1",
+      budgetAwareUpgradeHook: "pricing_overlay_v1",
+    },
+  };
+}
+
 async function buildValidation(deck: DeckRecord, repository: DeckRepository) {
   const ownedLookup = new Map<string, number>();
 
@@ -101,16 +115,27 @@ export class DeckService {
   private async buildPayload(deck: DeckRecord): Promise<DeckWithValidation> {
     const validation = await buildValidation(deck, this.repository);
     const analytics = analyzeDeckComposition(deck);
-    const intelligence = await buildDeckIntelligence({
-      analytics,
-      context: {
-        deck,
+    let intelligence: Awaited<ReturnType<typeof buildDeckIntelligence>>;
+
+    try {
+      intelligence = await buildDeckIntelligence({
+        analytics,
+        context: {
+          deck,
+          sourceMode: deck.preferredSource,
+          commanderColors: validation.commanderColorIdentity,
+        },
+        sourceProvider: this.intelligenceDependencies.sourceProvider,
+        comboDataSource: this.intelligenceDependencies.comboDataSource,
+      });
+    } catch (error) {
+      console.error("[Deck][intelligence] Failed to build intelligence payload; using fallback.", {
+        deckId: deck.id,
         sourceMode: deck.preferredSource,
-        commanderColors: validation.commanderColorIdentity,
-      },
-      sourceProvider: this.intelligenceDependencies.sourceProvider,
-      comboDataSource: this.intelligenceDependencies.comboDataSource,
-    });
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+      intelligence = buildFallbackIntelligence(deck.preferredSource);
+    }
 
     return { deck, validation, analytics, intelligence };
   }
@@ -179,25 +204,14 @@ export class DeckService {
       });
 
       if (currentQuantity + 1 > owned) {
-        const validation = await buildValidation(currentDeck, this.repository);
-        const analytics = analyzeDeckComposition(currentDeck);
-        const intelligence = await buildDeckIntelligence({
-          analytics,
-          context: {
-            deck: currentDeck,
-            sourceMode: currentDeck.preferredSource,
-            commanderColors: validation.commanderColorIdentity,
-          },
-          sourceProvider: this.intelligenceDependencies.sourceProvider,
-          comboDataSource: this.intelligenceDependencies.comboDataSource,
-        });
+        const payload = await this.buildPayload(currentDeck);
 
         return {
-          deck: currentDeck,
+          deck: payload.deck,
           validation: {
-            ...validation,
+            ...payload.validation,
             issues: [
-              ...validation.issues,
+              ...payload.validation.issues,
               {
                 code: "library_quantity_exceeded",
                 cardId: parsed.cardId,
@@ -205,8 +219,8 @@ export class DeckService {
               },
             ],
           },
-          analytics,
-          intelligence,
+          analytics: payload.analytics,
+          intelligence: payload.intelligence,
         };
       }
     }

@@ -19,7 +19,17 @@ export default async function DeckEditorPage({ params }: DeckEditorPageProps) {
     redirect("/decks?error=service_unavailable");
   }
 
-  const payload = await service.getById(deckId);
+  let payload: Awaited<ReturnType<typeof service.getById>> | null = null;
+  try {
+    payload = await service.getById(deckId);
+  } catch (error) {
+    console.error("[Deck][page] Failed to load deck editor payload.", {
+      deckId,
+      userId: appUser.appUserId,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    redirect("/decks?error=service_unavailable");
+  }
 
   if (!payload) {
     redirect("/decks?error=deck_not_found");

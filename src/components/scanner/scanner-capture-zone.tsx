@@ -16,6 +16,7 @@ type ScannerCaptureZoneProps = {
   onRequestPermission: () => Promise<boolean>;
   onRefresh: () => Promise<void>;
   isScanning: boolean;
+  onLiveCameraStatusChange?: (status: string) => void;
 };
 
 /**
@@ -30,6 +31,7 @@ export function ScannerCaptureZone({
   onRequestPermission,
   onRefresh,
   isScanning,
+  onLiveCameraStatusChange,
 }: ScannerCaptureZoneProps) {
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressionInfo, setCompressionInfo] = useState<CompressionResult | null>(null);
@@ -104,6 +106,10 @@ export function ScannerCaptureZone({
       void onRefresh();
     }
   }, [capabilities?.permissionState, liveCameraStatus, onRefresh]);
+
+  useEffect(() => {
+    onLiveCameraStatusChange?.(liveCameraStatus);
+  }, [liveCameraStatus, onLiveCameraStatusChange]);
 
   // Permission denied state
   if (error?.code === "permission_denied" || capabilities?.permissionState === "denied") {

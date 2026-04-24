@@ -210,6 +210,8 @@ export function DeckEditorWorkspace({
   const [reviewTab, setReviewTab] = useState<"analytics" | "validation" | "guidance" | "playtest">("analytics");
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("deckbuilder");
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const sourcePanelRef = useRef<HTMLDivElement | null>(null);
+  const sourceSearchInputRef = useRef<HTMLInputElement | null>(null);
   const sourceRequestSequenceRef = useRef(0);
   const debouncedSourceSearch = useDebouncedValue(search, 180);
   const normalizedSourceSearch = useMemo(
@@ -278,6 +280,19 @@ export function DeckEditorWorkspace({
       ),
     [deck.cards],
   );
+  const isEmptyDeck = deck.cards.length === 0;
+
+  function focusSourcePanel(options?: { preferCommander?: boolean }) {
+    setWorkspaceView("deckbuilder");
+    if (options?.preferCommander) {
+      setSourceFilters((current) => ({ ...current, type: "Creature" }));
+    }
+
+    sourcePanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    window.setTimeout(() => {
+      sourceSearchInputRef.current?.focus();
+    }, 80);
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -591,7 +606,7 @@ export function DeckEditorWorkspace({
 
       <div className={workspaceView === "deckbuilder" ? "" : "hidden"}>
         <div className="grid gap-5 xl:grid-cols-[340px_1fr]">
-          <aside className="space-y-5">
+          <aside ref={sourcePanelRef} className="space-y-5">
             <section className="surface-panel p-5 sm:p-6">
               <p className="type-label">Source Mode</p>
               <div className="mt-3 flex gap-2">
@@ -614,6 +629,7 @@ export function DeckEditorWorkspace({
               <label className="mt-4 block space-y-2">
                 <span className="type-label">Search Source</span>
                 <input
+                  ref={sourceSearchInputRef}
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
                   maxLength={240}
@@ -723,6 +739,23 @@ export function DeckEditorWorkspace({
           </aside>
 
           <section className="space-y-5">
+            {isEmptyDeck ? (
+              <section className="surface-panel p-5 sm:p-6">
+                <p className="type-label">Start Building</p>
+                <h3 className="type-title mt-2">This deck is ready for its first cards.</h3>
+                <p className="type-body-muted mt-2">
+                  Choose a commander first, or start adding core cards from your source panel.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button type="button" className="nav-link nav-link-active" onClick={() => focusSourcePanel({ preferCommander: true })}>
+                    Add Commander
+                  </button>
+                  <button type="button" className="nav-link" onClick={() => focusSourcePanel()}>
+                    Add Cards
+                  </button>
+                </div>
+              </section>
+            ) : null}
             <section className="surface-panel p-5 sm:p-6">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>

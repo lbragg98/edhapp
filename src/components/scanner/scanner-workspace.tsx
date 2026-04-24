@@ -21,6 +21,23 @@ import { broadcastLibraryInvalidation } from "@/lib/library-sync";
 
 type ScanStage = "upload" | "preprocessing" | "ocr" | "matching" | "complete";
 type CaptureSource = "upload" | "capture" | "live";
+type ScannerLoopState =
+  | "camera-active"
+  | "reading"
+  | "no-text-detected"
+  | "low-confidence"
+  | "candidate-found"
+  | "added-to-pending"
+  | "timeout"
+  | "error";
+
+type ScannerDebugState = {
+  lastOcrText: string;
+  lastConfidence: number | null;
+  lastCandidate: string | null;
+  lastError: string | null;
+  lastProcessingMs: number | null;
+};
 
 type ScannerCandidate = {
   card: {
@@ -94,6 +111,15 @@ export function ScannerWorkspace() {
   const [manualSearchResults, setManualSearchResults] = useState<CardSelectionItem[]>([]);
   const [manualSearchLoading, setManualSearchLoading] = useState(false);
   const [pendingImports, setPendingImports] = useState<PendingImportState>({ items: [] });
+  const [loopState, setLoopState] = useState<ScannerLoopState>("camera-active");
+  const [cameraState, setCameraState] = useState<string>("idle");
+  const [debugState, setDebugState] = useState<ScannerDebugState>({
+    lastOcrText: "",
+    lastConfidence: null,
+    lastCandidate: null,
+    lastError: null,
+    lastProcessingMs: null,
+  });
 
   // Refs for scroll behavior
   const resultsRef = useRef<HTMLElement>(null);
@@ -151,10 +177,12 @@ export function ScannerWorkspace() {
 
     scanInFlightRef.current = true;
     setIsScanning(true);
+    setLoopState("reading");
     setIssues([]);
     setScanError(null);
     setScanStage("upload");
     setManualSearchResults([]);
+    const startedAt = performance.now();
 
     const form = new FormData();
     form.set("image", targetFile);
@@ -168,10 +196,18 @@ export function ScannerWorkspace() {
       await new Promise((r) => setTimeout(r, 300));
 
       setScanStage("ocr");
-      const response = await fetch("/api/scanner/scan", {
-        method: "POST",
-        body: form,
-      });
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 10_000);
+      let response: Response;
+      try {
+        response = await fetch("/api/scanner/scan", {
+          method: "POST",
+          body: form,
+          signal: controller.signal,
+        });
+      } finally {
+        window.clearTimeout(timeout);
+      }
 
       setScanStage("matching");
 
@@ -182,8 +218,15 @@ export function ScannerWorkspace() {
 
       if (!response.ok) {
         setScan(null);
-        setScanError(payload.error ?? "Scan failed.");
-        setIssues(payload.data?.issues ?? [{ code: "scan_error", message: payload.error ?? "Scan failed." }]);
+        const message = payload.error ?? "Scan failed.";
+        setScanError(message);
+        setIssues(payload.data?.issues ?? [{ code: "scan_error", message }]);
+        setLoopState("error");
+        setDebugState((current) => ({
+          ...current,
+          lastError: message,
+          lastProcessingMs: Math.round(performance.now() - startedAt),
+        }));
         setIsScanning(false);
         scanInFlightRef.current = false;
         return;
@@ -193,6 +236,12 @@ export function ScannerWorkspace() {
         setScan(null);
         setScanError("No scan data returned.");
         setIssues([{ code: "scan_error", message: "No scan data returned." }]);
+        setLoopState("error");
+        setDebugState((current) => ({
+          ...current,
+          lastError: "No scan data returned.",
+          lastProcessingMs: Math.round(performance.now() - startedAt),
+        }));
         setIsScanning(false);
         scanInFlightRef.current = false;
         return;
@@ -205,6 +254,19 @@ export function ScannerWorkspace() {
       scanInFlightRef.current = false;
 
       const topCandidate = payload.data.candidates[0];
+      const hasNoText = payload.data.issues.some((issue) => issue.code === "no_text_detected" || issue.code === "ocr_empty");
+      const isLowConfidence = payload.data.issues.some((issue) => issue.code === "low_confidence_match");
+
+      if (hasNoText) {
+        setLoopState("no-text-detected");
+      } else if (isLowConfidence) {
+        setLoopState("low-confidence");
+      } else if (topCandidate) {
+        setLoopState("candidate-found");
+      } else {
+        setLoopState("no-text-detected");
+      }
+
       if (topCandidate && topCandidate.confidence >= 0.86) {
         setPendingImports((current) =>
           addPendingImport(current, {
@@ -214,7 +276,16 @@ export function ScannerWorkspace() {
             scanId: payload.data!.scanId,
           }),
         );
+        setLoopState("added-to-pending");
       }
+
+      setDebugState({
+        lastOcrText: payload.data.extractedText,
+        lastConfidence: payload.data.extractionConfidence,
+        lastCandidate: topCandidate?.card.name ?? null,
+        lastError: null,
+        lastProcessingMs: Math.round(performance.now() - startedAt),
+      });
 
       // Scroll to results on mobile
       if (window.innerWidth < 1280) {
@@ -223,8 +294,16 @@ export function ScannerWorkspace() {
         }, 100);
       }
     } catch (err) {
-      setScanError(err instanceof Error ? err.message : "Network error");
-      setIssues([{ code: "scan_error", message: "Network error. Check your connection and try again." }]);
+      const message = err instanceof Error ? err.message : "Network error";
+      const timedOut = message === "The operation was aborted." || (err as { name?: string } | undefined)?.name === "AbortError";
+      setScanError(timedOut ? "Scanner timed out while reading the frame." : message);
+      setIssues([{ code: timedOut ? "ocr_timeout" : "scan_error", message: timedOut ? "OCR timed out for this frame." : "Network error. Check your connection and try again." }]);
+      setLoopState(timedOut ? "timeout" : "error");
+      setDebugState((current) => ({
+        ...current,
+        lastError: timedOut ? "Frame processing timeout (10s)" : message,
+        lastProcessingMs: Math.round(performance.now() - startedAt),
+      }));
       setIsScanning(false);
       scanInFlightRef.current = false;
     }
@@ -299,6 +378,7 @@ export function ScannerWorkspace() {
           onRequestPermission={requestPermission}
           onRefresh={refresh}
           isScanning={isScanning}
+          onLiveCameraStatusChange={setCameraState}
         />
 
         {/* Preview of captured/uploaded image */}
@@ -362,6 +442,19 @@ export function ScannerWorkspace() {
             onAdjustAndRetry={handleAdjustAndRetry}
           />
         )}
+
+        <div className="surface-panel p-4">
+          <p className="type-label">Scanner Runtime</p>
+          <p className="mt-2 text-xs text-[color:var(--text-subtle)]">Camera: {cameraState}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">Loop: {loopState}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">OCR text: {debugState.lastOcrText || "(none)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">Confidence: {debugState.lastConfidence !== null ? formatPercentRatio(debugState.lastConfidence) : "(n/a)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">Candidate: {debugState.lastCandidate ?? "(none)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">Frame time: {debugState.lastProcessingMs !== null ? `${debugState.lastProcessingMs}ms` : "(n/a)"}</p>
+          {debugState.lastError ? (
+            <p className="mt-1 text-xs text-rose-300">Error: {debugState.lastError}</p>
+          ) : null}
+        </div>
       </section>
 
       {/* Right column: Results */}
