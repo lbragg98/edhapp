@@ -39,13 +39,15 @@ export async function getScannerOcrRuntimeStatus() {
 
   const initialized = await initializeSharedOcrWorker({ timeoutMs: 8_000 });
   const runtime = getOcrWorkerRuntimeStatus();
+  const initializing = runtime.initializing || initialized.initializing;
+  const ready = initialized.ready && runtime.ready;
 
   return {
-    ready: initialized.ready && runtime.ready,
-    initializing: runtime.initializing,
+    ready,
+    initializing,
     workerInitialized: runtime.workerInitialized,
     source: "local_tesseract" as const,
-    lastError: runtime.lastError ?? initialized.message ?? null,
-    failureStage: runtime.failureStage ?? initialized.failureStage ?? null,
+    lastError: ready || initializing ? null : runtime.lastError ?? initialized.message ?? null,
+    failureStage: ready || initializing ? null : runtime.failureStage ?? initialized.failureStage ?? null,
   };
 }

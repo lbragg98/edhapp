@@ -9,6 +9,7 @@ type OcrWorkerState = {
   workerPromise: ReturnType<typeof createWorker> | null;
   ready: boolean;
   initializing: boolean;
+  initStartedAt: number | null;
   lastError: string | null;
   lastFailureStage: OcrFailureStage | null;
 };
@@ -17,6 +18,7 @@ const state: OcrWorkerState = {
   workerPromise: null,
   ready: false,
   initializing: false,
+  initStartedAt: null,
   lastError: null,
   lastFailureStage: null,
 };
@@ -69,54 +71,94 @@ async function createAndInitializeWorker() {
   return worker;
 }
 
+function ensureInitializationStarted() {
+  if (state.workerPromise) {
+    return;
+  }
+
+  state.initializing = true;
+  state.initStartedAt = Date.now();
+  state.lastError = null;
+  state.lastFailureStage = null;
+  state.workerPromise = createAndInitializeWorker();
+
+  state.workerPromise
+    .then(() => {
+      state.ready = true;
+      state.initializing = false;
+      state.lastError = null;
+      state.lastFailureStage = null;
+    })
+    .catch((error) => {
+      const message = error instanceof Error ? error.message : "Unknown OCR worker initialization error";
+      const failureStage = detectFailureStage(message);
+      state.ready = false;
+      state.initializing = false;
+      state.lastError = message;
+      state.lastFailureStage = failureStage;
+      state.workerPromise = null;
+
+      console.error("[Scanner][ocr] Worker initialization failed.", {
+        message,
+        failureStage,
+        langPath: env.SCANNER_TESSERACT_LANG_PATH ?? "default",
+        corePath: env.SCANNER_TESSERACT_CORE_PATH ?? "default",
+        workerPath: env.SCANNER_TESSERACT_WORKER_PATH ?? "default",
+      });
+    });
+}
+
 export async function initializeSharedOcrWorker(options?: { timeoutMs?: number }): Promise<{
   ready: boolean;
+  initializing: boolean;
   workerInitialized: boolean;
   message?: string;
   failureStage?: OcrFailureStage;
 }> {
-  const timeoutMs = options?.timeoutMs ?? 8_000;
+  const timeoutMs = options?.timeoutMs ?? 12_000;
+  ensureInitializationStarted();
 
   if (!state.workerPromise) {
-    state.initializing = true;
-    state.workerPromise = createAndInitializeWorker();
+    return {
+      ready: false,
+      initializing: false,
+      workerInitialized: false,
+      message: state.lastError ?? "OCR worker unavailable.",
+      failureStage: state.lastFailureStage ?? "worker_init",
+    };
+  }
+
+  if (state.ready) {
+    return { ready: true, initializing: false, workerInitialized: true };
   }
 
   try {
     await withTimeout(state.workerPromise, timeoutMs, "OCR_WORKER_INIT_TIMEOUT");
-    state.ready = true;
-    state.initializing = false;
-    state.lastError = null;
-    state.lastFailureStage = null;
-    return { ready: true, workerInitialized: true };
+    return { ready: true, initializing: false, workerInitialized: true };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown OCR worker initialization error";
-    const failureStage = message === "OCR_WORKER_INIT_TIMEOUT" ? "worker_init" : detectFailureStage(message);
-    state.ready = false;
-    state.initializing = false;
-    state.lastError = message;
-    state.lastFailureStage = failureStage;
-    state.workerPromise = null;
-
-    console.error("[Scanner][ocr] Worker initialization failed.", {
-      message,
-      failureStage,
-      langPath: env.SCANNER_TESSERACT_LANG_PATH ?? "default",
-      corePath: env.SCANNER_TESSERACT_CORE_PATH ?? "default",
-      workerPath: env.SCANNER_TESSERACT_WORKER_PATH ?? "default",
-    });
+    if (message === "OCR_WORKER_INIT_TIMEOUT") {
+      return {
+        ready: false,
+        initializing: true,
+        workerInitialized: false,
+        message: "OCR engine is still initializing.",
+        failureStage: "worker_init",
+      };
+    }
 
     return {
       ready: false,
+      initializing: false,
       workerInitialized: false,
-      message,
-      failureStage,
+      message: state.lastError ?? message,
+      failureStage: state.lastFailureStage ?? detectFailureStage(message),
     };
   }
 }
 
 export async function getSharedOcrWorker() {
-  const initialized = await initializeSharedOcrWorker();
+  const initialized = await initializeSharedOcrWorker({ timeoutMs: 45_000 });
   if (!initialized.ready || !state.workerPromise) {
     throw new Error(initialized.message ?? "OCR worker unavailable");
   }
@@ -127,9 +169,9 @@ export function getOcrWorkerRuntimeStatus() {
   return {
     ready: state.ready,
     initializing: state.initializing,
+    initStartedAt: state.initStartedAt,
     workerInitialized: state.ready && Boolean(state.workerPromise),
     lastError: state.lastError,
     failureStage: state.lastFailureStage,
   };
 }
-
