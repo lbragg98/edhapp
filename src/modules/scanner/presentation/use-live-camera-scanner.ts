@@ -9,9 +9,11 @@ import { mapCameraError } from "@/modules/scanner/domain/camera-capabilities";
 export type LiveCameraStatus =
   | "idle"
   | "requesting-permission"
-  | "active"
-  | "denied"
-  | "unavailable"
+  | "camera-starting"
+  | "camera-active"
+  | "video-unavailable"
+  | "permission-denied"
+  | "unsupported-browser"
   | "error";
 
 type CaptureSource = "live";
@@ -37,6 +39,12 @@ function toFriendlyStartupError(error: unknown): { code: string; message: string
   };
 }
 
+async function waitForNextFrame(): Promise<void> {
+  await new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
 export function useLiveCameraScanner(input: {
   isScanning: boolean;
   intervalMs?: number;
@@ -56,8 +64,7 @@ export function useLiveCameraScanner(input: {
     isScanningRef.current = isScanning;
   }, [isScanning]);
 
-  const stop = useCallback(() => {
-    console.info("[Scanner][camera] stop requested");
+  const cleanupStream = useCallback(() => {
     frameSamplerRef.current?.stop();
     frameSamplerRef.current = null;
     streamControllerRef.current?.stop();
@@ -66,8 +73,13 @@ export function useLiveCameraScanner(input: {
       videoRef.current.srcObject = null;
     }
     frameInFlightRef.current = false;
-    setStatus("idle");
   }, []);
+
+  const stop = useCallback(() => {
+    console.info("[Scanner][camera] stop requested");
+    cleanupStream();
+    setStatus("idle");
+  }, [cleanupStream]);
 
   const sampleFrame = useCallback(async () => {
     if (!videoRef.current || !canvasRef.current || frameInFlightRef.current || isScanningRef.current) {
@@ -119,21 +131,21 @@ export function useLiveCameraScanner(input: {
 
     if (typeof navigator === "undefined" || typeof window === "undefined") {
       console.warn("[Scanner][camera] navigator/window unavailable");
-      setStatus("unavailable");
+      setStatus("unsupported-browser");
       setLastError("Camera APIs are unavailable in this environment.");
       return;
     }
 
     if (!navigator.mediaDevices?.getUserMedia) {
       console.warn("[Scanner][camera] mediaDevices.getUserMedia unsupported");
-      setStatus("unavailable");
+      setStatus("unsupported-browser");
       setLastError("This browser does not support camera capture.");
       return;
     }
 
     if (!canUseSecureCameraContext()) {
       console.warn("[Scanner][camera] insecure context");
-      setStatus("unavailable");
+      setStatus("unsupported-browser");
       setLastError("Camera requires HTTPS (or localhost).");
       return;
     }
@@ -150,25 +162,34 @@ export function useLiveCameraScanner(input: {
         audio: false,
       });
       console.info("[Scanner][camera] stream received");
+      setStatus("camera-starting");
 
-      if (!videoRef.current) {
+      await waitForNextFrame();
+      let video = videoRef.current;
+      if (!video) {
+        await waitForNextFrame();
+        video = videoRef.current;
+      }
+
+      if (!video) {
+        stream.getTracks().forEach((track) => track.stop());
         controller.stop();
-        setStatus("error");
+        setStatus("video-unavailable");
         setLastError("Camera video element was not available.");
         return;
       }
 
-      videoRef.current.srcObject = stream;
-      videoRef.current.setAttribute("playsInline", "true");
-      videoRef.current.muted = true;
-      await videoRef.current.play();
+      video.srcObject = stream;
+      video.setAttribute("playsInline", "true");
+      video.muted = true;
+      await video.play();
       console.info("[Scanner][camera] video playing");
 
       streamControllerRef.current = controller;
       const sampler = new FrameSampler();
       sampler.start(sampleFrame, { intervalMs });
       frameSamplerRef.current = sampler;
-      setStatus("active");
+      setStatus("camera-active");
     } catch (error) {
       const mapped = toFriendlyStartupError(error);
       console.error("[Scanner][camera] startup failed", {
@@ -176,16 +197,16 @@ export function useLiveCameraScanner(input: {
         message: mapped.message,
       });
       if (mapped.code === "permission_denied") {
-        setStatus("denied");
+        setStatus("permission-denied");
       } else if (mapped.code === "not_supported" || mapped.code === "insecure_context") {
-        setStatus("unavailable");
+        setStatus("unsupported-browser");
       } else {
         setStatus("error");
       }
       setLastError(mapped.message);
-      stop();
+      cleanupStream();
     }
-  }, [intervalMs, sampleFrame, stop]);
+  }, [cleanupStream, intervalMs, sampleFrame]);
 
   useEffect(() => () => stop(), [stop]);
 
@@ -196,7 +217,6 @@ export function useLiveCameraScanner(input: {
     canvasRef,
     start,
     stop,
-    isActive: status === "active",
+    isActive: status === "camera-active",
   };
 }
-

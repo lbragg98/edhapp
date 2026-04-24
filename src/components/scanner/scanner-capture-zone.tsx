@@ -100,7 +100,7 @@ export function ScannerCaptureZone({
   }, []);
 
   useEffect(() => {
-    if (liveCameraStatus === "denied" && capabilities?.permissionState !== "denied") {
+    if (liveCameraStatus === "permission-denied" && capabilities?.permissionState !== "denied") {
       void onRefresh();
     }
   }, [capabilities?.permissionState, liveCameraStatus, onRefresh]);
@@ -142,7 +142,7 @@ export function ScannerCaptureZone({
   }
 
   // Camera not available state
-  if (capabilities && !capabilities.hasCamera && !capabilities.supportsCapture) {
+  if (capabilities && !capabilities.supportsMediaDevices) {
     return (
       <div className="surface-panel p-5 sm:p-6">
         <div className="flex flex-col items-center gap-4 py-6 text-center">
@@ -177,16 +177,16 @@ export function ScannerCaptureZone({
 
       {/* Capture Zone with Framing Guide */}
       <div className="mt-3 overflow-hidden rounded-xl border border-dashed border-[color:var(--surface-border-strong)] bg-white/[0.02]">
-        <div className="relative aspect-[3/4] max-h-72">
-          {isLiveCameraActive ? (
-            <video
-              ref={liveVideoRef}
-              className="absolute inset-0 h-full w-full object-cover"
-              muted
-              playsInline
-              autoPlay
-            />
-          ) : null}
+        <div className="relative min-h-[52dvh] sm:min-h-[58dvh] md:min-h-[28rem]">
+          <video
+            ref={liveVideoRef}
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity ${
+              isLiveCameraActive ? "opacity-100" : "opacity-20"
+            }`}
+            muted
+            playsInline
+            autoPlay
+          />
           <canvas ref={liveCanvasRef} className="hidden" />
           <div className="absolute inset-0 flex items-center justify-center">
             {/* Card frame guide */}
@@ -207,6 +207,14 @@ export function ScannerCaptureZone({
                 ) : isLiveCameraActive ? (
                   <div className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-200">
                     Live scanning active
+                  </div>
+                ) : liveCameraStatus === "requesting-permission" ? (
+                  <div className="rounded-full border border-blue-500/30 bg-blue-500/15 px-3 py-1 text-xs text-blue-200">
+                    Requesting permission...
+                  </div>
+                ) : liveCameraStatus === "camera-starting" ? (
+                  <div className="rounded-full border border-blue-500/30 bg-blue-500/15 px-3 py-1 text-xs text-blue-200">
+                    Camera starting...
                   </div>
                 ) : isCompressing ? (
                   <div className="flex items-center gap-2 text-sm text-zinc-400">
