@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Library, Search } from "lucide-react";
 import { CardSelectionGrid } from "@/components/cards";
 import { AddToLibraryControls, LibraryControls } from "@/components/library/library-controls";
@@ -21,6 +21,7 @@ import {
 import { estimateValuation } from "@/modules/pricing";
 import { PriceInline, ValueEstimateChip } from "@/components/pricing";
 import { normalizeSearchText } from "@/modules/search";
+import { subscribeToLibraryInvalidation } from "@/lib/library-sync";
 
 type LibraryWorkspaceProps = {
   initialRecords: LibraryRecord[];
@@ -164,7 +165,7 @@ export function LibraryWorkspace({ initialRecords }: LibraryWorkspaceProps) {
     [records],
   );
 
-  async function refreshLibrary() {
+  const refreshLibrary = useCallback(async () => {
     const normalizedImmediateQuery = normalizeSearchText(query, { maxLength: 120, unicodeForm: "NFKC" });
     const params = new URLSearchParams();
     if (normalizedImmediateQuery) params.set("query", normalizedImmediateQuery);
@@ -182,7 +183,9 @@ export function LibraryWorkspace({ initialRecords }: LibraryWorkspaceProps) {
     }
 
     setRecords(parsed);
-  }
+  }, [conditionFilter, finishFilter, query]);
+
+  useEffect(() => subscribeToLibraryInvalidation(() => void refreshLibrary()), [refreshLibrary]);
 
   async function mutateHolding(holdingId: string, delta: number) {
     await fetch(`/api/library/holdings/${holdingId}`, {

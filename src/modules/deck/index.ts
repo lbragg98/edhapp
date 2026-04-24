@@ -22,3 +22,4 @@ export * from "@/modules/deck/presentation/deck-analytics-view";
 export * from "@/modules/deck/presentation/deck-intelligence-view";
 export * from "@/modules/deck/presentation/deck-playtest-view";
 export * from "@/modules/deck/presentation/deck-upgrade-view";
+export * from "@/modules/deck/presentation/deck-workspace-response";

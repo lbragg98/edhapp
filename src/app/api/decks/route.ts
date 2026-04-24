@@ -53,23 +53,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const payload = await service.create({
-    name: body.data.name,
-    ...(body.data.sourceMode ? { sourceMode: body.data.sourceMode } : {}),
-    ...(body.data.description ? { description: body.data.description } : {}),
-    ...(body.data.notes ? { notes: body.data.notes } : {}),
-    ...(body.data.tags ? { tags: body.data.tags } : {}),
-  });
+  try {
+    const payload = await service.create({
+      name: body.data.name,
+      ...(body.data.sourceMode ? { sourceMode: body.data.sourceMode } : {}),
+      ...(body.data.description ? { description: body.data.description } : {}),
+      ...(body.data.notes ? { notes: body.data.notes } : {}),
+      ...(body.data.tags ? { tags: body.data.tags } : {}),
+    });
 
-  return NextResponse.json(
-    {
-      data: {
-        deck: toDeckView(payload.deck),
-        validation: toDeckValidationView(payload.validation),
-        analytics: toDeckAnalyticsView(payload.analytics),
-        intelligence: toDeckIntelligenceView(payload.intelligence),
+    return NextResponse.json(
+      {
+        data: {
+          deck: toDeckView(payload.deck),
+          validation: toDeckValidationView(payload.validation),
+          analytics: toDeckAnalyticsView(payload.analytics),
+          intelligence: toDeckIntelligenceView(payload.intelligence),
+        },
       },
-    },
-    { status: 201 },
-  );
+      { status: 201 },
+    );
+  } catch (error) {
+    console.error("[Deck][create] Failed to create deck.", {
+      userId: auth.appUser.appUserId,
+      input: body.data,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    return NextResponse.json({ error: "Failed to create deck." }, { status: 500 });
+  }
 }

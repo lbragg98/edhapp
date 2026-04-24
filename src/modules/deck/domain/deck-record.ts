@@ -48,7 +48,7 @@ export type DeckValidationIssue = {
     | "color_identity_violation"
     | "library_quantity_exceeded";
   message: string;
-  cardId?: string;
+  cardId?: string | undefined;
 };
 
 export type DeckValidationReport = {

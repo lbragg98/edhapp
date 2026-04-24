@@ -51,4 +51,41 @@ describe("matchScanCandidates", () => {
     expect(result[0]!.card.name).toBe("Sol Ring");
     expect(result[0]!.confidence).toBeGreaterThan(result[1]!.confidence);
   });
+
+  it("keeps low-confidence scans explicit so UI can show manual confirmation fallback", async () => {
+    const searchCardsService = {
+      async execute() {
+        return {
+          items: [
+            {
+              id: "1",
+              oracleId: "o1",
+              name: "Arcane Signet",
+              manaCost: "{2}",
+              typeLine: "Artifact",
+              oracleText: "{T}: Add one mana of any color in your commander's color identity.",
+              imageUri: null,
+              colorIdentity: [],
+              cmc: 2,
+              legalCommander: true,
+              price: null,
+            },
+          ],
+          hasMore: false,
+          nextPage: null,
+          total: 1,
+        };
+      },
+    };
+
+    const result = await matchScanCandidates({
+      extractedText: "??? signtet blurry photo",
+      extractionConfidence: 0.2,
+      searchCardsService,
+    });
+
+    expect(result.length).toBe(1);
+    expect(result[0]?.confidence).toBeLessThan(0.62);
+    expect(result[0]?.reasons).toContain("Low OCR confidence; verify before confirming");
+  });
 });

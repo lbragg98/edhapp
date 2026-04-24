@@ -51,23 +51,33 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const payload = await service.addCard({
-    deckId: params.data.deckId,
-    ...body.data,
-  });
+  try {
+    const payload = await service.addCard({
+      deckId: params.data.deckId,
+      ...body.data,
+    });
 
-  if (!payload) {
-    return NextResponse.json({ error: "Deck not found" }, { status: 404 });
+    if (!payload) {
+      return NextResponse.json({ error: "Deck not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      data: {
+        deck: toDeckView(payload.deck),
+        validation: toDeckValidationView(payload.validation),
+        analytics: toDeckAnalyticsView(payload.analytics),
+        intelligence: toDeckIntelligenceView(payload.intelligence),
+      },
+    });
+  } catch (error) {
+    console.error("[Deck][add-card] Failed to add card.", {
+      userId: auth.appUser.appUserId,
+      deckId: params.data.deckId,
+      body: body.data,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    return NextResponse.json({ error: "Failed to add card to deck." }, { status: 500 });
   }
-
-  return NextResponse.json({
-    data: {
-      deck: toDeckView(payload.deck),
-      validation: toDeckValidationView(payload.validation),
-      analytics: toDeckAnalyticsView(payload.analytics),
-      intelligence: toDeckIntelligenceView(payload.intelligence),
-    },
-  });
 }
 
 export async function PATCH(
@@ -96,22 +106,32 @@ export async function PATCH(
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const payload = await service.adjustCard({
-    deckId: params.data.deckId,
-    entryId: body.data.entryId,
-    delta: body.data.delta,
-  });
+  try {
+    const payload = await service.adjustCard({
+      deckId: params.data.deckId,
+      entryId: body.data.entryId,
+      delta: body.data.delta,
+    });
 
-  if (!payload) {
-    return NextResponse.json({ error: "Deck not found" }, { status: 404 });
+    if (!payload) {
+      return NextResponse.json({ error: "Deck not found" }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      data: {
+        deck: toDeckView(payload.deck),
+        validation: toDeckValidationView(payload.validation),
+        analytics: toDeckAnalyticsView(payload.analytics),
+        intelligence: toDeckIntelligenceView(payload.intelligence),
+      },
+    });
+  } catch (error) {
+    console.error("[Deck][adjust-card] Failed to adjust card quantity.", {
+      userId: auth.appUser.appUserId,
+      deckId: params.data.deckId,
+      body: body.data,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
+    return NextResponse.json({ error: "Failed to adjust deck card." }, { status: 500 });
   }
-
-  return NextResponse.json({
-    data: {
-      deck: toDeckView(payload.deck),
-      validation: toDeckValidationView(payload.validation),
-      analytics: toDeckAnalyticsView(payload.analytics),
-      intelligence: toDeckIntelligenceView(payload.intelligence),
-    },
-  });
 }

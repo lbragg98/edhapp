@@ -1,8 +1,5 @@
-import Link from "next/link";
-import { Download, Layers } from "lucide-react";
 import { SectionHeading } from "@/components/layout";
-import { DeckCreatePanel } from "@/components/decks";
-import { EmptyState } from "@/components/primitives";
+import { DecksWorkspace } from "@/components/decks";
 import { createDeckService } from "@/modules/deck";
 import { getProtectedPageAppUser } from "@/server/auth";
 
@@ -21,49 +18,7 @@ export default async function DecksPage() {
         description="Source mode can swap between your library and the full legal pool without changing the editor interaction model."
       />
 
-      <div className="mt-10 space-y-5">
-        <DeckCreatePanel />
-
-        <section className="surface-panel p-5 sm:p-6">
-          <p className="type-label">Your Decks</p>
-          <div className="mt-3 space-y-2">
-            {decks.length === 0 ? (
-              <EmptyState
-                icon={<Layers size={24} />}
-                title="No decks yet"
-                description="Create your first Commander deck to start building. You can source cards from your library or the full legal pool."
-              />
-            ) : (
-              decks.map((deck) => (
-                <article key={deck.id} className="surface-card interactive-lift p-4">
-                  <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-sm font-medium text-zinc-100">{deck.name}</p>
-                      <p className="text-xs text-[color:var(--text-subtle)]">
-                        {deck.cards.reduce((sum, entry) => sum + entry.quantity, 0)} cards
-                      </p>
-                    </div>
-
-                    <div className="flex flex-wrap items-center justify-end gap-2">
-                      <a
-                        href={`/api/decks/${deck.id}/playtest-pdf`}
-                        className="nav-link"
-                        download
-                      >
-                        <Download size={14} className="mr-1.5" />
-                        Download Playtest PDF
-                      </a>
-                      <Link href={`/decks/${deck.id}`} className="nav-link nav-link-active">
-                        Open
-                      </Link>
-                    </div>
-                  </div>
-                </article>
-              ))
-            )}
-          </div>
-        </section>
-      </div>
+      <DecksWorkspace initialDecks={decks} />
     </>
   );
 }

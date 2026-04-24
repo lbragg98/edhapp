@@ -28,14 +28,51 @@ function overlapScore(left: string, right: string): number {
   return union > 0 ? overlap / union : 0;
 }
 
+function trigramScore(left: string, right: string): number {
+  const a = normalize(left);
+  const b = normalize(right);
+  if (a.length < 3 || b.length < 3) {
+    return 0;
+  }
+
+  const leftTrigrams = new Set<string>();
+  const rightTrigrams = new Set<string>();
+
+  for (let index = 0; index <= a.length - 3; index += 1) {
+    leftTrigrams.add(a.slice(index, index + 3));
+  }
+  for (let index = 0; index <= b.length - 3; index += 1) {
+    rightTrigrams.add(b.slice(index, index + 3));
+  }
+
+  if (leftTrigrams.size === 0 || rightTrigrams.size === 0) {
+    return 0;
+  }
+
+  let overlap = 0;
+  leftTrigrams.forEach((token) => {
+    if (rightTrigrams.has(token)) {
+      overlap += 1;
+    }
+  });
+
+  return overlap / Math.max(leftTrigrams.size, rightTrigrams.size);
+}
+
 function rankCandidate(card: CardListItem, queryText: string, extractionConfidence: number): ScannerCandidateMatch {
   const nameScore = overlapScore(card.name, queryText);
-  const oracleScore = overlapScore(card.oracleText ?? "", queryText) * 0.35;
-  const combined = Math.min(1, nameScore * 0.65 + oracleScore + extractionConfidence * 0.35);
+  const nameTrigram = trigramScore(card.name, queryText);
+  const oracleScore = overlapScore(card.oracleText ?? "", queryText) * 0.3;
+  const typeScore = overlapScore(card.typeLine, queryText) * 0.2;
+  const combined = Math.min(
+    1,
+    nameScore * 0.4 + nameTrigram * 0.35 + oracleScore + typeScore + extractionConfidence * 0.15,
+  );
 
   const reasons: string[] = [];
-  if (nameScore >= 0.5) reasons.push("Name tokens strongly overlap extracted text");
+  if (nameScore >= 0.5 || nameTrigram >= 0.4) reasons.push("Name tokens strongly overlap extracted text");
   if (oracleScore >= 0.15) reasons.push("Rules text keywords align with OCR content");
+  if (typeScore >= 0.1) reasons.push("Type line tokens align with OCR content");
   if (extractionConfidence < 0.4) reasons.push("Low OCR confidence; verify before confirming");
 
   return {
@@ -53,9 +90,13 @@ function extractQueryCandidates(raw: string): string[] {
 
   const unique = Array.from(new Set(lines.map((line) => normalize(line)).filter(Boolean)));
 
-  return unique
+  const tokenizedCandidates = tokenize(raw)
+    .filter((token) => token.length >= 3)
+    .slice(0, 5);
+
+  return [...unique, ...tokenizedCandidates]
     .sort((a, b) => b.length - a.length)
-    .slice(0, 3)
+    .slice(0, 5)
     .map((entry) => entry.slice(0, 80));
 }
 

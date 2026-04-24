@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import type { ScannerConfirmationResult } from "@/modules/scanner";
 import { createAddLibraryCardService } from "@/modules/library";
+import { scryfallCardSchema } from "@/modules/catalog/infrastructure/scryfall/schemas";
 import { requireApiAppUser } from "@/server/auth";
+
+const SCRYFALL_API_BASE = "https://api.scryfall.com";
 
 const confirmInputSchema = z.object({
   scanId: z.string().min(1),
@@ -42,9 +45,23 @@ export async function POST(request: Request) {
     );
   }
 
-  const { scanId, printingId, finish, condition, quantity, cardName, setName } = parsed.data;
+  const { scanId, cardId, printingId, finish, condition, quantity, cardName, setName } = parsed.data;
 
   try {
+    const [selectedCard, selectedPrinting] = await Promise.all([
+      fetchScryfallCard(cardId),
+      fetchScryfallCard(printingId),
+    ]);
+
+    const selectedCardOracleId = selectedCard.oracle_id ?? selectedCard.id;
+    const selectedPrintingOracleId = selectedPrinting.oracle_id ?? selectedPrinting.id;
+    if (selectedCardOracleId !== selectedPrintingOracleId) {
+      return NextResponse.json(
+        { error: "Selected printing does not match selected card." },
+        { status: 400 },
+      );
+    }
+
     const addService = createAddLibraryCardService(auth.appUser.appUserId);
     const result = await addService.execute({
       scryfallCardId: printingId,
@@ -72,7 +89,31 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ data: confirmationResult });
   } catch (error) {
+    console.error("[Scanner][confirm] Failed to import scanned card.", {
+      userId: auth.appUser.appUserId,
+      scanId,
+      cardId,
+      printingId,
+      error: error instanceof Error ? error.message : "Unknown error",
+    });
     const message = error instanceof Error ? error.message : "Failed to import card.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
+}
+
+async function fetchScryfallCard(cardId: string) {
+  const response = await fetch(`${SCRYFALL_API_BASE}/cards/${cardId}`, {
+    headers: {
+      "User-Agent": "CommandTower/0.1 (https://example.com)",
+      Accept: "application/json",
+    },
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Unable to resolve Scryfall card ${cardId}.`);
+  }
+
+  const json = (await response.json()) as unknown;
+  return scryfallCardSchema.parse(json);
 }

@@ -17,6 +17,7 @@ import { PriceInline, ValueEstimateChip } from "@/components/pricing";
 import { CardPreviewThumbnail } from "@/components/cards/card-preview";
 import { parseDeckSourceResultResponse } from "@/modules/deckbuilder";
 import { normalizeSearchText } from "@/modules/search";
+import { parseDeckWorkspaceResponse } from "@/modules/deck";
 
 type CardColor = "W" | "U" | "B" | "R" | "G";
 const TYPE_FILTERS = ["Any", "Land", "Creature", "Instant", "Sorcery", "Artifact", "Enchantment", "Planeswalker"] as const;
@@ -208,6 +209,7 @@ export function DeckEditorWorkspace({
   const [isDraggingMainboard, setIsDraggingMainboard] = useState(false);
   const [reviewTab, setReviewTab] = useState<"analytics" | "validation" | "guidance" | "playtest">("analytics");
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>("deckbuilder");
+  const [mutationError, setMutationError] = useState<string | null>(null);
   const sourceRequestSequenceRef = useRef(0);
   const debouncedSourceSearch = useDebouncedValue(search, 180);
   const normalizedSourceSearch = useMemo(
@@ -316,25 +318,35 @@ export function DeckEditorWorkspace({
     return () => controller.abort();
   }, [sourceMode, normalizedSourceSearch]);
 
-  async function syncDeckFromResponse(response: Response) {
+  async function syncDeckFromResponse(response: Response): Promise<boolean> {
     if (!response.ok) {
-      return;
+      let message = "Deck update failed.";
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (typeof payload.error === "string" && payload.error.length > 0) {
+          message = payload.error;
+        }
+      } catch {
+        // ignore parse failures
+      }
+      setMutationError(message);
+      return false;
     }
 
-    const payload = (await response.json()) as {
-      data: {
-        deck: DeckRecord;
-        validation: DeckValidationReport;
-        analytics: DeckAnalyticsReport;
-        intelligence: DeckIntelligenceReport;
-      };
-    };
+    const rawPayload = await response.json();
+    const payload = parseDeckWorkspaceResponse(rawPayload, "deck_editor_workspace_sync");
+    if (!payload) {
+      setMutationError("Deck response was invalid. Please retry.");
+      return false;
+    }
 
-    setDeck(payload.data.deck);
-    setValidation(payload.data.validation);
-    setAnalytics(payload.data.analytics);
-    setIntelligence(payload.data.intelligence);
+    setDeck(payload.deck);
+    setValidation(payload.validation);
+    setAnalytics(payload.analytics);
+    setIntelligence(payload.intelligence);
     setSelectedDeck(new Set());
+    setMutationError(null);
+    return true;
   }
 
   async function setMode(mode: "all" | "library") {
@@ -363,7 +375,10 @@ export function DeckEditorWorkspace({
       }),
     });
 
-    await syncDeckFromResponse(response);
+    const synced = await syncDeckFromResponse(response);
+    if (!synced) {
+      return;
+    }
     setSelectedSource((current) => {
       const next = new Set(current);
       next.delete(payload.sourceItemId);
@@ -415,7 +430,7 @@ export function DeckEditorWorkspace({
   const bulkAdd = useCallback(async (payloads: DeckDragCardPayload[], zone: "commander" | "mainboard") => {
     if (payloads.length === 0) return;
     setIsBulkMutating(true);
-    await Promise.all(
+    const responses = await Promise.all(
       payloads.map((payload) =>
         fetch(`/api/decks/${deck.id}/cards`, {
           method: "POST",
@@ -431,6 +446,9 @@ export function DeckEditorWorkspace({
         }),
       ),
     );
+    if (responses.some((response) => !response.ok)) {
+      setMutationError("Some cards could not be added.");
+    }
     await fetchDeckSnapshot();
     setSelectedSource(new Set());
     setIsBulkMutating(false);
@@ -440,7 +458,7 @@ export function DeckEditorWorkspace({
     const selectedEntries = deck.cards.filter((entry) => selectedDeck.has(entry.id));
     if (selectedEntries.length === 0) return;
     setIsBulkMutating(true);
-    await Promise.all(
+    const responses = await Promise.all(
       selectedEntries.map((entry) =>
         fetch(`/api/decks/${deck.id}/cards`, {
           method: "PATCH",
@@ -449,6 +467,9 @@ export function DeckEditorWorkspace({
         }),
       ),
     );
+    if (responses.some((response) => !response.ok)) {
+      setMutationError("Some cards could not be removed.");
+    }
     await fetchDeckSnapshot();
     setSelectedDeck(new Set());
     setIsBulkMutating(false);
@@ -562,6 +583,11 @@ export function DeckEditorWorkspace({
           </button>
         </div>
       </section>
+      {mutationError ? (
+        <section className="surface-panel border-rose-500/25 bg-rose-500/10 p-3 text-sm text-rose-200">
+          {mutationError}
+        </section>
+      ) : null}
 
       <div className={workspaceView === "deckbuilder" ? "" : "hidden"}>
         <div className="grid gap-5 xl:grid-cols-[340px_1fr]">

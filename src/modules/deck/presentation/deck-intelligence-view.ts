@@ -57,7 +57,7 @@ const deckComboViewSchema = z.object({
   missingCount: z.number(),
 });
 
-const deckIntelligenceViewSchema = z.object({
+export const deckIntelligenceViewSchema = z.object({
   sourceMode: z.enum(["all", "library"]),
   generatedAt: z.string(),
   recommendations: z.array(deckGuidanceViewSchema),
@@ -72,4 +72,3 @@ const deckIntelligenceViewSchema = z.object({
 export function toDeckIntelligenceView(report: DeckIntelligenceReport) {
   return deckIntelligenceViewSchema.parse(report);
 }
-

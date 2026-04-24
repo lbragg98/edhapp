@@ -1,20 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import type { DeckRecord } from "@/modules/deck";
 
 type CreateDeckResponse = {
   data: {
-    deck: {
-      id: string;
-    };
+    deck: DeckRecord;
   };
 };
 
-export function DeckCreatePanel() {
-  const router = useRouter();
+type DeckCreatePanelProps = {
+  onCreated?: (deck: DeckRecord) => void;
+};
+
+export function DeckCreatePanel({ onCreated }: DeckCreatePanelProps) {
   const [name, setName] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function createDeck() {
     if (!name.trim()) {
@@ -22,6 +24,7 @@ export function DeckCreatePanel() {
     }
 
     setIsSubmitting(true);
+    setError(null);
 
     const response = await fetch("/api/decks", {
       method: "POST",
@@ -33,13 +36,24 @@ export function DeckCreatePanel() {
     });
 
     if (!response.ok) {
+      try {
+        const payload = (await response.json()) as { error?: string };
+        if (typeof payload.error === "string" && payload.error.length > 0) {
+          setError(payload.error);
+        } else {
+          setError("Failed to create deck.");
+        }
+      } catch {
+        setError("Failed to create deck.");
+      }
       setIsSubmitting(false);
       return;
     }
 
     const payload = (await response.json()) as CreateDeckResponse;
-
-    router.push(`/decks/${payload.data.deck.id}`);
+    setName("");
+    setIsSubmitting(false);
+    onCreated?.(payload.data.deck);
   }
 
   return (
@@ -61,6 +75,11 @@ export function DeckCreatePanel() {
           {isSubmitting ? "Creating..." : "Create"}
         </button>
       </div>
+      {error ? (
+        <p className="mt-3 rounded-lg border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-sm text-rose-200">
+          {error}
+        </p>
+      ) : null}
     </section>
   );
 }

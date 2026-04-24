@@ -3,7 +3,7 @@ import type { DeckAnalyticsReport } from "@/modules/deck/domain/deck-analytics";
 
 const densitySchema = z.object({ count: z.number(), ratio: z.number() });
 
-const deckAnalyticsViewSchema = z.object({
+export const deckAnalyticsViewSchema = z.object({
   totalCards: z.number(),
   mainboardCards: z.number(),
   manaCurve: z.array(z.object({ label: z.enum(["0", "1", "2", "3", "4", "5", "6+"]), count: z.number() })),

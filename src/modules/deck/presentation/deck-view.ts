@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { DeckRecord } from "@/modules/deck/domain/deck-record";
 
-const deckCardViewSchema = z.object({
+export const deckCardViewSchema = z.object({
   id: z.string(),
   cardId: z.string(),
   oracleId: z.string(),
@@ -31,7 +31,7 @@ const deckCardViewSchema = z.object({
     .nullable(),
 });
 
-const deckViewSchema = z.object({
+export const deckViewSchema = z.object({
   id: z.string(),
   name: z.string(),
   slug: z.string(),

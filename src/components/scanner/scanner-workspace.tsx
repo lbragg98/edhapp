@@ -1,16 +1,18 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, Library } from "lucide-react";
 import type { ScannerConfirmationResult, ScannerIssue } from "@/modules/scanner";
 import { useCameraPermissions } from "@/modules/scanner/presentation/use-camera-permissions";
 import type { CompressionResult } from "@/modules/scanner/application/compress-image";
 import { formatPercentRatio, formatUsd } from "@/modules/pricing";
+import { parseCardSearchResultResponse, toCardSelectionItems, type CardSelectionItem } from "@/modules/catalog";
 import { ScannerConfirmationPanel } from "@/components/scanner/scanner-confirmation-panel";
 import { ScannerCaptureZone } from "@/components/scanner/scanner-capture-zone";
 import { ScannerErrorPanel } from "@/components/scanner/scanner-error-panel";
 import { ScannerProgress } from "@/components/scanner/scanner-progress";
 import { CardPreviewThumbnail } from "@/components/cards/card-preview";
+import { broadcastLibraryInvalidation } from "@/lib/library-sync";
 
 type ScanStage = "upload" | "preprocessing" | "ocr" | "matching" | "complete";
 
@@ -77,6 +79,9 @@ export function ScannerWorkspace() {
   // Confirmation flow state
   const [confirmingCandidate, setConfirmingCandidate] = useState<ScannerCandidate | null>(null);
   const [lastImport, setLastImport] = useState<ScannerConfirmationResult | null>(null);
+  const [manualSearch, setManualSearch] = useState("");
+  const [manualSearchResults, setManualSearchResults] = useState<CardSelectionItem[]>([]);
+  const [manualSearchLoading, setManualSearchLoading] = useState(false);
 
   // Refs for scroll behavior
   const resultsRef = useRef<HTMLElement>(null);
@@ -86,6 +91,12 @@ export function ScannerWorkspace() {
     () => (selectedFile ? URL.createObjectURL(selectedFile) : null),
     [selectedFile]
   );
+  const topConfidence = scan?.candidates[0]?.confidence ?? 0;
+  const needsManualFallback = scan ? scan.candidates.length === 0 || topConfidence < 0.62 : false;
+  const normalizedManualSearch = useMemo(() => manualSearch.trim(), [manualSearch]);
+  const canRunManualSearch = needsManualFallback && normalizedManualSearch.length >= 2;
+  const visibleManualSearchResults = canRunManualSearch ? manualSearchResults : [];
+  const showManualSearchLoading = canRunManualSearch && manualSearchLoading;
 
   const handleFileSelected = useCallback((file: File, compression: CompressionResult) => {
     setSelectedFile(file);
@@ -103,6 +114,8 @@ export function ScannerWorkspace() {
     setIssues([]);
     setScanError(null);
     setManualText("");
+    setManualSearch("");
+    setManualSearchResults([]);
   }, []);
 
   const handleAdjustAndRetry = useCallback(() => {
@@ -121,6 +134,7 @@ export function ScannerWorkspace() {
     setIssues([]);
     setScanError(null);
     setScanStage("upload");
+    setManualSearchResults([]);
 
     const form = new FormData();
     form.set("image", selectedFile);
@@ -179,6 +193,48 @@ export function ScannerWorkspace() {
       setIsScanning(false);
     }
   }
+
+  useEffect(() => {
+    if (!canRunManualSearch) {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setManualSearchLoading(true);
+      try {
+        const params = new URLSearchParams({
+          query: normalizedManualSearch,
+          pool: "all",
+          commanderOnly: "false",
+          sort: "relevance",
+          pageSize: "8",
+        });
+        const response = await fetch(`/api/cards?${params.toString()}`, { signal: controller.signal });
+        const payload = await response.json();
+        const parsed = parseCardSearchResultResponse(payload, "scanner_manual_fallback");
+        if (!parsed || !response.ok) {
+          setManualSearchResults([]);
+          setManualSearchLoading(false);
+          return;
+        }
+
+        setManualSearchResults(toCardSelectionItems(parsed.items));
+        setManualSearchLoading(false);
+      } catch (error) {
+        if ((error as { name?: string } | undefined)?.name === "AbortError") {
+          return;
+        }
+        setManualSearchResults([]);
+        setManualSearchLoading(false);
+      }
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [canRunManualSearch, normalizedManualSearch]);
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(280px,420px)_1fr]">
@@ -361,6 +417,62 @@ export function ScannerWorkspace() {
             )}
           </div>
         </div>
+
+        {needsManualFallback ? (
+          <div className="surface-panel p-5 sm:p-6">
+            <p className="type-label">Manual Confirmation Fallback</p>
+            <p className="mt-2 text-sm text-[color:var(--text-subtle)]">
+              Confidence is low. Search and select the correct card before importing.
+            </p>
+            <label className="mt-3 block">
+              <input
+                value={manualSearch}
+                onChange={(event) => setManualSearch(event.target.value)}
+                placeholder="Search card name manually"
+                className="w-full rounded-xl border border-[color:var(--surface-border)] bg-white/[0.03] px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500 focus:border-[color:var(--surface-border-strong)] focus:outline-none"
+              />
+            </label>
+            <div className="mt-3 space-y-2">
+              {showManualSearchLoading ? (
+                <p className="text-xs text-[color:var(--text-subtle)]">Searching...</p>
+              ) : visibleManualSearchResults.length === 0 ? (
+                <p className="text-xs text-[color:var(--text-subtle)]">
+                  {manualSearch.trim().length < 2 ? "Type at least 2 characters." : "No manual results yet."}
+                </p>
+              ) : (
+                visibleManualSearchResults.map((item) => (
+                  <article key={item.id} className="surface-card flex items-center gap-3 p-3">
+                    <CardPreviewThumbnail normalUri={item.imageUri} name={item.title} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-zinc-100">{item.title}</p>
+                      <p className="truncate text-xs text-[color:var(--text-subtle)]">{item.subtitle}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="nav-link nav-link-active"
+                      onClick={() =>
+                        setConfirmingCandidate({
+                          card: {
+                            id: item.id,
+                            name: item.title,
+                            manaCost: item.manaCost,
+                            typeLine: item.subtitle,
+                            imageUri: item.imageUri,
+                            price: item.price ? { usd: item.price.usd } : null,
+                          },
+                          confidence: 0.35,
+                          reasons: ["Manual search selection"],
+                        })
+                      }
+                    >
+                      Select
+                    </button>
+                  </article>
+                ))
+              )}
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {/* Confirmation Panel Overlay */}
@@ -373,6 +485,7 @@ export function ScannerWorkspace() {
               onConfirmed={(result) => {
                 setLastImport(result);
                 setConfirmingCandidate(null);
+                broadcastLibraryInvalidation("scanner_import_confirmed");
               }}
               onCancel={() => setConfirmingCandidate(null)}
             />
@@ -409,3 +522,4 @@ export function ScannerWorkspace() {
     </div>
   );
 }
+

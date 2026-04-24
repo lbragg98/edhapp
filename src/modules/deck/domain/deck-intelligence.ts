@@ -53,7 +53,7 @@ export type DeckSynergySuggestion = {
 export type DeckComboPiece = {
   name: string;
   present: boolean;
-  cardId?: string;
+  cardId?: string | undefined;
 };
 
 export type DeckComboSuggestion = {
@@ -100,4 +100,3 @@ export type DeckIntelligenceContext = {
   sourceMode: DeckSourceMode;
   commanderColors: string[];
 };
-
