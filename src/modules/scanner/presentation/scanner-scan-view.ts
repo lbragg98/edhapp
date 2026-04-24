@@ -48,7 +48,18 @@ const scannerScanViewSchema = z.object({
   candidates: z.array(scannerCandidateViewSchema),
   issues: z.array(
     z.object({
-      code: z.enum(["image_missing", "image_invalid", "ocr_unavailable", "ocr_empty", "low_confidence_match"]),
+      code: z.enum([
+        "camera_unavailable",
+        "image_missing",
+        "image_invalid",
+        "scan_error",
+        "ocr_unavailable",
+        "ocr_timeout",
+        "ocr_empty",
+        "no_text_detected",
+        "candidate_match_failed",
+        "low_confidence_match",
+      ]),
       message: z.string(),
     }),
   ),
@@ -64,4 +75,3 @@ const scannerScanViewSchema = z.object({
 export function toScannerScanView(result: ScannerScanResult) {
   return scannerScanViewSchema.parse(result);
 }
-

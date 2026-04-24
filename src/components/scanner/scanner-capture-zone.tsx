@@ -1,17 +1,22 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
-import { Camera, Upload, AlertTriangle, RefreshCw, ImageIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Camera, Upload, AlertTriangle, RefreshCw, ImageIcon, Pause, Play } from "lucide-react";
 import type { CameraCapabilities, CameraError } from "@/modules/scanner/domain/camera-capabilities";
 import { compressImage, formatFileSize, type CompressionResult } from "@/modules/scanner/application/compress-image";
+import { CameraStreamController } from "@/modules/scanner/camera/camera-stream-controller";
+import { FrameSampler } from "@/modules/scanner/camera/frame-sampler";
+
+type CaptureSource = "upload" | "capture" | "live";
 
 type ScannerCaptureZoneProps = {
-  onFileSelected: (file: File, compressionResult: CompressionResult) => void;
+  onFileSelected: (file: File, compressionResult: CompressionResult, source: CaptureSource) => void;
   capabilities: CameraCapabilities | null;
   isDetecting: boolean;
   error: CameraError | null;
   onRequestPermission: () => Promise<boolean>;
   onRefresh: () => Promise<void>;
+  isScanning: boolean;
 };
 
 /**
@@ -25,14 +30,39 @@ export function ScannerCaptureZone({
   error,
   onRequestPermission,
   onRefresh,
+  isScanning,
 }: ScannerCaptureZoneProps) {
   const [isCompressing, setIsCompressing] = useState(false);
   const [compressionInfo, setCompressionInfo] = useState<CompressionResult | null>(null);
+  const [liveModeEnabled, setLiveModeEnabled] = useState(false);
+  const [liveModeError, setLiveModeError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const captureInputRef = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const streamControllerRef = useRef<CameraStreamController | null>(null);
+  const frameSamplerRef = useRef<FrameSampler | null>(null);
+  const frameInFlightRef = useRef(false);
+
+  const canUseLiveCamera = useMemo(
+    () => Boolean(capabilities?.hasCamera && capabilities.supportsCapture),
+    [capabilities],
+  );
+
+  const stopLiveMode = useCallback(() => {
+    frameSamplerRef.current?.stop();
+    frameSamplerRef.current = null;
+    streamControllerRef.current?.stop();
+    streamControllerRef.current = null;
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+    frameInFlightRef.current = false;
+    setLiveModeEnabled(false);
+  }, []);
 
   const handleFileChange = useCallback(
-    async (event: React.ChangeEvent<HTMLInputElement>) => {
+    async (event: React.ChangeEvent<HTMLInputElement>, source: CaptureSource) => {
       const file = event.target.files?.[0];
       if (!file) return;
 
@@ -42,7 +72,7 @@ export function ScannerCaptureZone({
       try {
         const result = await compressImage(file);
         setCompressionInfo(result);
-        onFileSelected(result.file, result);
+        onFileSelected(result.file, result, source);
       } catch {
         // If compression fails, use original
         const fallbackResult: CompressionResult = {
@@ -53,7 +83,7 @@ export function ScannerCaptureZone({
           ratio: 1.0,
         };
         setCompressionInfo(fallbackResult);
-        onFileSelected(file, fallbackResult);
+        onFileSelected(file, fallbackResult, source);
       } finally {
         setIsCompressing(false);
       }
@@ -80,6 +110,98 @@ export function ScannerCaptureZone({
   const handleUploadClick = useCallback(() => {
     fileInputRef.current?.click();
   }, []);
+
+  const sampleLiveFrame = useCallback(async () => {
+    if (!videoRef.current || !canvasRef.current || frameInFlightRef.current || isScanning) {
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video.videoWidth || !video.videoHeight) {
+      return;
+    }
+
+    frameInFlightRef.current = true;
+    try {
+      const canvas = canvasRef.current;
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        return;
+      }
+
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/jpeg", 0.86),
+      );
+
+      if (!blob) {
+        return;
+      }
+
+      const file = new File([blob], `live-scan-${Date.now()}.jpg`, {
+        type: "image/jpeg",
+      });
+      const result: CompressionResult = {
+        file,
+        wasCompressed: false,
+        originalSize: file.size,
+        finalSize: file.size,
+        ratio: 1,
+      };
+      onFileSelected(file, result, "live");
+    } finally {
+      frameInFlightRef.current = false;
+    }
+  }, [isScanning, onFileSelected]);
+
+  const startLiveMode = useCallback(async () => {
+    if (!canUseLiveCamera) {
+      setLiveModeError("Live camera scanning is not available on this device.");
+      return;
+    }
+
+    try {
+      setLiveModeError(null);
+      if (capabilities?.permissionState === "prompt") {
+        const granted = await onRequestPermission();
+        if (!granted) {
+          setLiveModeError("Camera permission was not granted.");
+          return;
+        }
+      }
+
+      const controller = new CameraStreamController();
+      const stream = await controller.start({
+        video: {
+          facingMode: { ideal: "environment" },
+        },
+        audio: false,
+      });
+
+      if (!videoRef.current) {
+        controller.stop();
+        return;
+      }
+
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+
+      streamControllerRef.current = controller;
+      const sampler = new FrameSampler();
+      sampler.start(sampleLiveFrame, { intervalMs: 900 });
+      frameSamplerRef.current = sampler;
+      setLiveModeEnabled(true);
+    } catch (captureError) {
+      setLiveModeError(
+        captureError instanceof Error ? captureError.message : "Unable to start live scanner.",
+      );
+      stopLiveMode();
+    }
+  }, [canUseLiveCamera, capabilities, onRequestPermission, sampleLiveFrame, stopLiveMode]);
+
+  useEffect(() => () => stopLiveMode(), [stopLiveMode]);
 
   // Permission denied state
   if (error?.code === "permission_denied" || capabilities?.permissionState === "denied") {
@@ -111,7 +233,7 @@ export function ScannerCaptureZone({
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={handleFileChange}
+          onChange={(event) => void handleFileChange(event, "upload")}
         />
       </div>
     );
@@ -141,7 +263,7 @@ export function ScannerCaptureZone({
           type="file"
           accept="image/*"
           className="hidden"
-          onChange={handleFileChange}
+          onChange={(event) => void handleFileChange(event, "upload")}
         />
       </div>
     );
@@ -153,8 +275,17 @@ export function ScannerCaptureZone({
 
       {/* Capture Zone with Framing Guide */}
       <div className="mt-3 overflow-hidden rounded-xl border border-dashed border-[color:var(--surface-border-strong)] bg-white/[0.02]">
-        {/* Framing overlay hint */}
         <div className="relative aspect-[3/4] max-h-72">
+          {liveModeEnabled ? (
+            <video
+              ref={videoRef}
+              className="absolute inset-0 h-full w-full object-cover"
+              muted
+              playsInline
+              autoPlay
+            />
+          ) : null}
+          <canvas ref={canvasRef} className="hidden" />
           <div className="absolute inset-0 flex items-center justify-center">
             {/* Card frame guide */}
             <div className="relative h-[85%] w-[65%]">
@@ -170,6 +301,10 @@ export function ScannerCaptureZone({
                   <div className="flex items-center gap-2 text-sm text-zinc-400">
                     <RefreshCw size={16} className="animate-spin" />
                     Detecting camera...
+                  </div>
+                ) : liveModeEnabled ? (
+                  <div className="rounded-full border border-emerald-500/30 bg-emerald-500/15 px-3 py-1 text-xs text-emerald-200">
+                    Live scanning active
                   </div>
                 ) : isCompressing ? (
                   <div className="flex items-center gap-2 text-sm text-zinc-400">
@@ -197,12 +332,30 @@ export function ScannerCaptureZone({
       <div className="mt-4 flex gap-2">
         <button
           type="button"
-          onClick={handleCaptureClick}
+          onClick={liveModeEnabled ? stopLiveMode : () => void startLiveMode()}
           disabled={isDetecting || isCompressing}
           className="nav-link nav-link-active flex-1 justify-center"
         >
+          {liveModeEnabled ? (
+            <>
+              <Pause size={14} className="mr-1.5" />
+              Stop Live Scan
+            </>
+          ) : (
+            <>
+              <Play size={14} className="mr-1.5" />
+              Start Live Scan
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={handleCaptureClick}
+          disabled={isDetecting || isCompressing || liveModeEnabled}
+          className="nav-link"
+        >
           <Camera size={14} className="mr-1.5" />
-          {capabilities?.hasRearCamera ? "Capture Card" : "Take Photo"}
+          Snap
         </button>
         <button
           type="button"
@@ -214,6 +367,10 @@ export function ScannerCaptureZone({
           Upload
         </button>
       </div>
+
+      {liveModeError ? (
+        <p className="mt-3 text-xs text-rose-300">{liveModeError}</p>
+      ) : null}
 
       {/* Compression feedback */}
       {compressionInfo?.wasCompressed && (
@@ -240,14 +397,14 @@ export function ScannerCaptureZone({
         accept="image/*"
         capture="environment"
         className="hidden"
-        onChange={handleFileChange}
+        onChange={(event) => void handleFileChange(event, "capture")}
       />
       <input
         ref={fileInputRef}
         type="file"
         accept="image/*"
         className="hidden"
-        onChange={handleFileChange}
+        onChange={(event) => void handleFileChange(event, "upload")}
       />
     </div>
   );

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type {
-  OcrRegionResult,
   ScannerOcrAdapter,
+  ScannerOcrRecognitionResult,
   ScannerProcessedImage,
   ScannerRegion,
 } from "@/modules/scanner/domain/scanner-record";
@@ -27,7 +27,7 @@ export class HttpOcrAdapter implements ScannerOcrAdapter {
   async recognize(input: {
     image: ScannerProcessedImage;
     regions: ScannerRegion[];
-  }): Promise<OcrRegionResult[]> {
+  }): Promise<ScannerOcrRecognitionResult> {
     const form = new FormData();
     const copied = new Uint8Array(input.image.bytes.length);
     copied.set(input.image.bytes);
@@ -43,16 +43,27 @@ export class HttpOcrAdapter implements ScannerOcrAdapter {
     });
 
     if (!response.ok) {
-      return [];
+      return {
+        status: "unavailable",
+        regions: [],
+        message: `Remote OCR endpoint responded with ${response.status}.`,
+      };
     }
 
     const json = (await response.json()) as unknown;
     const parsed = ocrResponseSchema.safeParse(json);
 
     if (!parsed.success) {
-      return [];
+      return {
+        status: "error",
+        regions: [],
+        message: "Remote OCR response payload validation failed.",
+      };
     }
 
-    return parsed.data.regions;
+    return {
+      status: "ok",
+      regions: parsed.data.regions,
+    };
   }
 }

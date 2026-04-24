@@ -19,12 +19,16 @@ type ScannerErrorPanelProps = {
  */
 function getIssueSeverity(code: string): ErrorSeverity {
   switch (code) {
+    case "camera_unavailable":
     case "image_missing":
     case "image_invalid":
     case "scan_error":
       return "error";
     case "ocr_unavailable":
+    case "ocr_timeout":
     case "ocr_empty":
+    case "no_text_detected":
+    case "candidate_match_failed":
       return "error";
     case "low_confidence_match":
       return "warning";
@@ -35,6 +39,8 @@ function getIssueSeverity(code: string): ErrorSeverity {
 
 function getSuggestion(code: string): string | null {
   switch (code) {
+    case "camera_unavailable":
+      return "Camera access was blocked. Allow camera permission and retry.";
     case "image_missing":
       return "Capture or upload an image to scan.";
     case "image_invalid":
@@ -42,9 +48,14 @@ function getSuggestion(code: string): string | null {
     case "scan_error":
       return "Scan could not be completed. Try again or upload a clearer image.";
     case "ocr_unavailable":
-      return "OCR service is temporarily unavailable. Try again in a moment.";
+      return "OCR is unavailable. Retry and check server scanner logs for adapter errors.";
+    case "ocr_timeout":
+      return "OCR timed out. Try a clearer frame with only one visible card.";
     case "ocr_empty":
+    case "no_text_detected":
       return "No text was detected. Ensure the card name is clearly visible and well-lit.";
+    case "candidate_match_failed":
+      return "We could not confidently resolve the OCR text to a card. Use manual search fallback.";
     case "low_confidence_match":
       return "Add OCR correction text below to help identify the card.";
     default:

@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { createScannerPipelineService, preprocessImageFromFile, toScannerScanView } from "@/modules/scanner";
 import { requireApiAppUser } from "@/server/auth";
 
+export const runtime = "nodejs";
+
 export async function POST(request: Request) {
   const auth = await requireApiAppUser();
   if (auth.response) {
@@ -28,15 +30,30 @@ export async function POST(request: Request) {
       ...(typeof manualText === "string" && manualText.trim() ? { manualText: manualText.trim() } : {}),
     });
 
+    const hasScannerFailures = result.issues.some((issue) =>
+      ["ocr_unavailable", "ocr_timeout", "candidate_match_failed", "scan_error"].includes(issue.code),
+    );
+    if (hasScannerFailures) {
+      console.warn("[Scanner][scan] Completed with non-fatal scanner issues.", {
+        userId: auth.appUser.appUserId,
+        issues: result.issues.map((issue) => issue.code),
+        extractedTextLength: result.extractedText.length,
+        topCandidateConfidence: result.candidates[0]?.confidence ?? null,
+      });
+    }
+
     return NextResponse.json({ data: toScannerScanView(result) });
   } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[Scanner][scan] Scan pipeline failed.", {
       userId: auth.appUser.appUserId,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: message,
+      stack: error instanceof Error ? error.stack : undefined,
     });
     return NextResponse.json(
       {
         error: "Scan pipeline failed. Please retry with a clearer image or manual hints.",
+        issues: [{ code: "scan_error", message: message }],
       },
       { status: 500 },
     );

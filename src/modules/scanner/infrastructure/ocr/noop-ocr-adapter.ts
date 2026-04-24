@@ -1,11 +1,14 @@
 import type {
-  OcrRegionResult,
   ScannerOcrAdapter,
+  ScannerOcrRecognitionResult,
 } from "@/modules/scanner/domain/scanner-record";
 
 export class NoopOcrAdapter implements ScannerOcrAdapter {
-  async recognize(): Promise<OcrRegionResult[]> {
-    return [];
+  async recognize(): Promise<ScannerOcrRecognitionResult> {
+    return {
+      status: "unavailable",
+      regions: [],
+      message: "OCR adapter not configured.",
+    };
   }
 }
-

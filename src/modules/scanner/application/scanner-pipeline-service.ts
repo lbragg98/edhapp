@@ -1,5 +1,5 @@
-import type { SearchCardsService } from "@/modules/catalog";
-import { matchScanCandidates } from "@/modules/scanner/application/match-scan-candidates";
+import { extractLikelyCardName, normalizeOcrText } from "@/modules/scanner/ocr/normalize-ocr-text";
+import { resolveCardCandidate } from "@/modules/scanner/recognition/resolve-card-candidate";
 import type {
   ScannerIssue,
   ScannerScanInput,
@@ -14,7 +14,6 @@ export class ScannerPipelineService {
     private readonly dependencies: {
       detector: ScannerRegionDetector;
       ocrAdapter: ScannerOcrAdapter;
-      searchCardsService: SearchCardsService;
     },
   ) {}
 
@@ -40,47 +39,70 @@ export class ScannerPipelineService {
       regions,
     });
 
-    const extractedText = [input.manualText?.trim() ?? "", ...ocrRegions.map((entry) => entry.text.trim())]
+    const extractedText = [input.manualText?.trim() ?? "", ...ocrRegions.regions.map((entry) => entry.text.trim())]
       .filter(Boolean)
       .join("\n");
+    const normalizedText = normalizeOcrText(extractedText);
+    const likelyCardName = extractLikelyCardName(normalizedText);
 
     const extractionConfidence =
-      ocrRegions.length > 0
+      ocrRegions.regions.length > 0
         ? Number(
             (
-              ocrRegions.reduce((sum, entry) => sum + entry.confidence, 0) /
-              Math.max(1, ocrRegions.length)
+              ocrRegions.regions.reduce((sum, entry) => sum + entry.confidence, 0) /
+              Math.max(1, ocrRegions.regions.length)
             ).toFixed(4),
           )
         : 0;
 
-    if (ocrRegions.length === 0 && !input.manualText?.trim()) {
+    if (ocrRegions.status === "timeout") {
       issues.push({
-        code: "ocr_unavailable",
-        message: "OCR did not return text. Try better lighting, tighter framing, or manual correction text.",
+        code: "ocr_timeout",
+        message: ocrRegions.message ?? "OCR timed out while reading the image.",
       });
     }
 
-    if (extractedText.length === 0) {
+    if (ocrRegions.status === "unavailable" || ocrRegions.status === "error") {
       issues.push({
-        code: "ocr_empty",
-        message: "No recognizable text extracted from this capture.",
+        code: "ocr_unavailable",
+        message:
+          ocrRegions.message ?? "OCR service is unavailable. Retry with manual hints or check scanner configuration.",
+      });
+    }
+
+    if (extractedText.length === 0 && !input.manualText?.trim()) {
+      issues.push({
+        code: "no_text_detected",
+        message: "No recognizable name text was detected in the name bar crop.",
       });
     }
 
     stages.push({
       stage: "ocr",
-      status: extractedText ? "ok" : "warning",
-      summary: extractedText ? "Text extracted for candidate matching." : "No text extracted yet.",
+      status: extractedText ? "ok" : ocrRegions.status === "timeout" ? "error" : "warning",
+      summary: extractedText
+        ? "Text extracted for candidate matching."
+        : ocrRegions.message ?? "No text extracted yet.",
     });
 
-    const candidates = extractedText
-      ? await matchScanCandidates({
-          extractedText,
+    const resolved = likelyCardName
+      ? await resolveCardCandidate({
+          extractedText: likelyCardName,
           extractionConfidence,
-          searchCardsService: this.dependencies.searchCardsService,
         })
-      : [];
+      : {
+          status: "failed" as const,
+          candidates: [],
+        };
+
+    const candidates = resolved.candidates;
+
+    if (resolved.status === "failed") {
+      issues.push({
+        code: "candidate_match_failed",
+        message: "Card matching failed. Try rescanning or use manual search.",
+      });
+    }
 
     if (candidates[0] && candidates[0].confidence < 0.62) {
       issues.push({
@@ -89,16 +111,26 @@ export class ScannerPipelineService {
       });
     }
 
+    if (!extractedText && input.manualText?.trim()) {
+      issues.push({
+        code: "ocr_empty",
+        message: "OCR was empty, but manual hint text was used for matching.",
+      });
+    }
+
     stages.push({
       stage: "matching",
       status: candidates.length > 0 ? "ok" : "warning",
-      summary: candidates.length > 0 ? `${candidates.length} candidate(s) ranked.` : "No confident card candidates found.",
+      summary:
+        candidates.length > 0
+          ? `${candidates.length} candidate(s) ranked (${resolved.status}).`
+          : "No confident card candidates found.",
     });
 
     return {
       scanId: crypto.randomUUID(),
       capturedAt: new Date().toISOString(),
-      extractedText,
+      extractedText: normalizedText,
       extractionConfidence,
       regions,
       candidates,
@@ -107,4 +139,3 @@ export class ScannerPipelineService {
     };
   }
 }
-

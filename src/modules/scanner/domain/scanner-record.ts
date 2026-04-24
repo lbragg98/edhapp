@@ -1,11 +1,15 @@
 import type { CardListItem } from "@/modules/catalog";
 
 export type ScannerIssueCode =
+  | "camera_unavailable"
   | "image_missing"
   | "image_invalid"
   | "scan_error"
   | "ocr_unavailable"
+  | "ocr_timeout"
   | "ocr_empty"
+  | "no_text_detected"
+  | "candidate_match_failed"
   | "low_confidence_match";
 
 export type ScannerIssue = {
@@ -43,6 +47,14 @@ export type OcrRegionResult = {
   confidence: number;
 };
 
+export type ScannerOcrStatus = "ok" | "unavailable" | "timeout" | "error";
+
+export type ScannerOcrRecognitionResult = {
+  status: ScannerOcrStatus;
+  regions: OcrRegionResult[];
+  message?: string;
+};
+
 export type ScannerCandidateMatch = {
   card: CardListItem;
   confidence: number;
@@ -70,7 +82,7 @@ export interface ScannerRegionDetector {
 }
 
 export interface ScannerOcrAdapter {
-  recognize(input: { image: ScannerProcessedImage; regions: ScannerRegion[] }): Promise<OcrRegionResult[]>;
+  recognize(input: { image: ScannerProcessedImage; regions: ScannerRegion[] }): Promise<ScannerOcrRecognitionResult>;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

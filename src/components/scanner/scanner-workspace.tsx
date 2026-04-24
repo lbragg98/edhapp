@@ -7,6 +7,11 @@ import { useCameraPermissions } from "@/modules/scanner/presentation/use-camera-
 import type { CompressionResult } from "@/modules/scanner/application/compress-image";
 import { formatPercentRatio, formatUsd } from "@/modules/pricing";
 import { parseCardSearchResultResponse, toCardSelectionItems, type CardSelectionItem } from "@/modules/catalog";
+import {
+  addPendingImport,
+  removePendingImport,
+  type PendingImportState,
+} from "@/modules/scanner/import/pending-import-store";
 import { ScannerConfirmationPanel } from "@/components/scanner/scanner-confirmation-panel";
 import { ScannerCaptureZone } from "@/components/scanner/scanner-capture-zone";
 import { ScannerErrorPanel } from "@/components/scanner/scanner-error-panel";
@@ -15,13 +20,19 @@ import { CardPreviewThumbnail } from "@/components/cards/card-preview";
 import { broadcastLibraryInvalidation } from "@/lib/library-sync";
 
 type ScanStage = "upload" | "preprocessing" | "ocr" | "matching" | "complete";
+type CaptureSource = "upload" | "capture" | "live";
 
 type ScannerCandidate = {
   card: {
     id: string;
+    oracleId: string;
     name: string;
     manaCost: string | null;
     typeLine: string;
+    oracleText: string | null;
+    colorIdentity: string[];
+    cmc: number;
+    legalCommander: boolean;
     imageUri: string | null;
     price: {
       usd: number | null;
@@ -82,10 +93,12 @@ export function ScannerWorkspace() {
   const [manualSearch, setManualSearch] = useState("");
   const [manualSearchResults, setManualSearchResults] = useState<CardSelectionItem[]>([]);
   const [manualSearchLoading, setManualSearchLoading] = useState(false);
+  const [pendingImports, setPendingImports] = useState<PendingImportState>({ items: [] });
 
   // Refs for scroll behavior
   const resultsRef = useRef<HTMLElement>(null);
   const manualInputRef = useRef<HTMLTextAreaElement>(null);
+  const scanInFlightRef = useRef(false);
 
   const previewUrl = useMemo(
     () => (selectedFile ? URL.createObjectURL(selectedFile) : null),
@@ -98,13 +111,15 @@ export function ScannerWorkspace() {
   const visibleManualSearchResults = canRunManualSearch ? manualSearchResults : [];
   const showManualSearchLoading = canRunManualSearch && manualSearchLoading;
 
-  const handleFileSelected = useCallback((file: File, compression: CompressionResult) => {
+  const handleFileSelected = useCallback((file: File, compression: CompressionResult, source: CaptureSource) => {
     setSelectedFile(file);
     setCompressionInfo(compression);
-    // Clear previous scan results when new file is selected
-    setScan(null);
-    setIssues([]);
-    setScanError(null);
+    if (source !== "live") {
+      // Clear previous scan results for manual upload/snap actions.
+      setScan(null);
+      setIssues([]);
+      setScanError(null);
+    }
   }, []);
 
   const handleRetake = useCallback(() => {
@@ -124,12 +139,17 @@ export function ScannerWorkspace() {
     manualInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
-  async function runScan() {
-    if (!selectedFile) {
+  const runScan = useCallback(async (fileToScan?: File) => {
+    const targetFile = fileToScan ?? selectedFile;
+    if (!targetFile) {
       setIssues([{ code: "image_missing", message: "Capture or upload an image first." }]);
       return;
     }
+    if (scanInFlightRef.current) {
+      return;
+    }
 
+    scanInFlightRef.current = true;
     setIsScanning(true);
     setIssues([]);
     setScanError(null);
@@ -137,7 +157,7 @@ export function ScannerWorkspace() {
     setManualSearchResults([]);
 
     const form = new FormData();
-    form.set("image", selectedFile);
+    form.set("image", targetFile);
     if (manualText.trim()) {
       form.set("manualText", manualText.trim());
     }
@@ -165,6 +185,7 @@ export function ScannerWorkspace() {
         setScanError(payload.error ?? "Scan failed.");
         setIssues(payload.data?.issues ?? [{ code: "scan_error", message: payload.error ?? "Scan failed." }]);
         setIsScanning(false);
+        scanInFlightRef.current = false;
         return;
       }
 
@@ -173,6 +194,7 @@ export function ScannerWorkspace() {
         setScanError("No scan data returned.");
         setIssues([{ code: "scan_error", message: "No scan data returned." }]);
         setIsScanning(false);
+        scanInFlightRef.current = false;
         return;
       }
 
@@ -180,6 +202,19 @@ export function ScannerWorkspace() {
       setScan(payload.data);
       setIssues(payload.data.issues ?? []);
       setIsScanning(false);
+      scanInFlightRef.current = false;
+
+      const topCandidate = payload.data.candidates[0];
+      if (topCandidate && topCandidate.confidence >= 0.86) {
+        setPendingImports((current) =>
+          addPendingImport(current, {
+            card: topCandidate.card,
+            confidence: topCandidate.confidence,
+            addedAt: new Date().toISOString(),
+            scanId: payload.data!.scanId,
+          }),
+        );
+      }
 
       // Scroll to results on mobile
       if (window.innerWidth < 1280) {
@@ -191,8 +226,23 @@ export function ScannerWorkspace() {
       setScanError(err instanceof Error ? err.message : "Network error");
       setIssues([{ code: "scan_error", message: "Network error. Check your connection and try again." }]);
       setIsScanning(false);
+      scanInFlightRef.current = false;
     }
-  }
+  }, [manualText, selectedFile]);
+
+  useEffect(() => {
+    if (!selectedFile || isScanning) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void runScan(selectedFile);
+    }, 120);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [selectedFile, isScanning, runScan]);
 
   useEffect(() => {
     if (!canRunManualSearch) {
@@ -248,6 +298,7 @@ export function ScannerWorkspace() {
           error={cameraError}
           onRequestPermission={requestPermission}
           onRefresh={refresh}
+          isScanning={isScanning}
         />
 
         {/* Preview of captured/uploaded image */}
@@ -293,14 +344,9 @@ export function ScannerWorkspace() {
             </label>
 
             <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                className="nav-link nav-link-active flex-1 justify-center"
-                onClick={runScan}
-                disabled={isScanning}
-              >
-                {isScanning ? "Scanning..." : "Run Scan Pipeline"}
-              </button>
+              <p className="flex-1 rounded-xl border border-[color:var(--surface-border)] bg-white/[0.02] px-3 py-2 text-xs text-[color:var(--text-subtle)]">
+                Auto scan is active. New frames and uploads are analyzed automatically.
+              </p>
               <button type="button" className="nav-link" onClick={handleRetake}>
                 Clear
               </button>
@@ -358,10 +404,50 @@ export function ScannerWorkspace() {
           <p className="mt-2 text-sm text-[color:var(--text-subtle)]">
             {scan
               ? "Select a match to import to your library."
-              : "Capture a card image and run the scan pipeline to see matches."}
+              : "Start live scan, snap, or upload an image to begin scanning."}
           </p>
 
           <div className="mt-4 space-y-3">
+            {pendingImports.items.length > 0 ? (
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/[0.06] p-3">
+                <p className="text-xs font-medium uppercase tracking-[0.12em] text-emerald-200">
+                  Pending Import Queue
+                </p>
+                <div className="mt-2 space-y-2">
+                  {pendingImports.items.slice(0, 4).map((pending) => (
+                    <article key={`${pending.scanId}-${pending.card.id}`} className="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-2.5">
+                      <CardPreviewThumbnail normalUri={pending.card.imageUri} name={pending.card.name} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm text-zinc-100">{pending.card.name}</p>
+                        <p className="text-xs text-[color:var(--text-subtle)]">
+                          Confidence {formatPercentRatio(pending.confidence)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        className="nav-link nav-link-active"
+                        onClick={() =>
+                          setConfirmingCandidate({
+                            card: pending.card,
+                            confidence: pending.confidence,
+                            reasons: ["Auto-queued high-confidence recognition"],
+                          })
+                        }
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        type="button"
+                        className="nav-link"
+                        onClick={() => setPendingImports((current) => removePendingImport(current, pending.card.id))}
+                      >
+                        Remove
+                      </button>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             {scan?.candidates.length ? (
               scan.candidates.map((candidate) => (
                 <article
@@ -454,9 +540,14 @@ export function ScannerWorkspace() {
                         setConfirmingCandidate({
                           card: {
                             id: item.id,
+                            oracleId: item.selection.cardId,
                             name: item.title,
                             manaCost: item.manaCost,
                             typeLine: item.subtitle,
+                            oracleText: null,
+                            colorIdentity: [],
+                            cmc: 0,
+                            legalCommander: true,
                             imageUri: item.imageUri,
                             price: item.price ? { usd: item.price.usd } : null,
                           },
@@ -484,6 +575,7 @@ export function ScannerWorkspace() {
               candidate={confirmingCandidate}
               onConfirmed={(result) => {
                 setLastImport(result);
+                setPendingImports((current) => removePendingImport(current, confirmingCandidate.card.id));
                 setConfirmingCandidate(null);
                 broadcastLibraryInvalidation("scanner_import_confirmed");
               }}
