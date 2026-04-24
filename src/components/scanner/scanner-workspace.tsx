@@ -51,6 +51,13 @@ type OcrEngineStatus = {
   source: "local_tesseract" | "remote" | null;
   failureStage: "worker_init" | "asset_load" | "ocr_recognize" | null;
   lastError: string | null;
+  initDurationMs: number | null;
+  assetPaths: {
+    langPath: string;
+    corePath: string;
+    workerPath: string;
+    cachePath: string;
+  } | null;
 };
 
 type ScannerCandidate = {
@@ -153,6 +160,8 @@ export function ScannerWorkspace() {
     source: null,
     failureStage: null,
     lastError: null,
+    initDurationMs: null,
+    assetPaths: null,
   });
   const [frameIntervalMs, setFrameIntervalMs] = useState(() => {
     if (typeof window === "undefined") {
@@ -193,6 +202,13 @@ export function ScannerWorkspace() {
             source: "local_tesseract" | "remote";
             failureStage: "worker_init" | "asset_load" | "ocr_recognize" | null;
             lastError: string | null;
+            initDurationMs: number | null;
+            assetPaths: {
+              langPath: string;
+              corePath: string;
+              workerPath: string;
+              cachePath: string;
+            };
           };
         };
 
@@ -208,6 +224,8 @@ export function ScannerWorkspace() {
             source: null,
             failureStage: "worker_init",
             lastError: "Failed to initialize OCR runtime.",
+            initDurationMs: null,
+            assetPaths: null,
           });
           return;
         }
@@ -219,6 +237,8 @@ export function ScannerWorkspace() {
           source: payload.data.source,
           failureStage: payload.data.failureStage,
           lastError: payload.data.lastError,
+          initDurationMs: payload.data.initDurationMs,
+          assetPaths: payload.data.assetPaths,
         });
       } catch (error) {
         if (cancelled) {
@@ -231,6 +251,8 @@ export function ScannerWorkspace() {
           source: null,
           failureStage: "worker_init",
           lastError: error instanceof Error ? error.message : "Failed to initialize OCR runtime.",
+          initDurationMs: null,
+          assetPaths: null,
         });
       }
     }
@@ -257,6 +279,13 @@ export function ScannerWorkspace() {
             source: "local_tesseract" | "remote";
             failureStage: "worker_init" | "asset_load" | "ocr_recognize" | null;
             lastError: string | null;
+            initDurationMs: number | null;
+            assetPaths: {
+              langPath: string;
+              corePath: string;
+              workerPath: string;
+              cachePath: string;
+            };
           };
         };
 
@@ -268,6 +297,8 @@ export function ScannerWorkspace() {
             ready: false,
             lastError: "Failed to initialize OCR runtime.",
             failureStage: "worker_init",
+            initDurationMs: null,
+            assetPaths: null,
           }));
           return;
         }
@@ -279,6 +310,8 @@ export function ScannerWorkspace() {
           source: payload.data.source,
           failureStage: payload.data.failureStage,
           lastError: payload.data.lastError,
+          initDurationMs: payload.data.initDurationMs,
+          assetPaths: payload.data.assetPaths,
         });
       } catch (error) {
         setOcrEngine((current) => ({
@@ -288,6 +321,8 @@ export function ScannerWorkspace() {
           ready: false,
           lastError: error instanceof Error ? error.message : "Failed to initialize OCR runtime.",
           failureStage: "worker_init",
+          initDurationMs: null,
+          assetPaths: null,
         }));
       }
     }, 1500);
@@ -673,7 +708,25 @@ export function ScannerWorkspace() {
             OCR engine: {ocrEngine.loading || ocrEngine.initializing ? "loading" : ocrEngine.ready ? "ready" : "unavailable"}
           </p>
           <p className="text-xs text-[color:var(--text-subtle)]">OCR source: {ocrEngine.source ?? "(unknown)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">
+            OCR status: {ocrEngine.loading || ocrEngine.initializing ? "loading-ocr" : ocrEngine.ready ? "ocr-ready" : "ocr-failed"}
+          </p>
+          <p className="text-xs text-[color:var(--text-subtle)]">
+            OCR init duration: {ocrEngine.initDurationMs !== null ? `${ocrEngine.initDurationMs}ms` : "(n/a)"}
+          </p>
           <p className="text-xs text-[color:var(--text-subtle)]">OCR failure stage: {ocrEngine.failureStage ?? "(none)"}</p>
+          <p className="text-xs text-[color:var(--text-subtle)]">
+            OCR worker path: {ocrEngine.assetPaths?.workerPath ?? "(n/a)"}
+          </p>
+          <p className="text-xs text-[color:var(--text-subtle)]">
+            OCR core path: {ocrEngine.assetPaths?.corePath ?? "(n/a)"}
+          </p>
+          <p className="text-xs text-[color:var(--text-subtle)]">
+            OCR lang path: {ocrEngine.assetPaths?.langPath ?? "(n/a)"}
+          </p>
+          <p className="text-xs text-[color:var(--text-subtle)]">
+            OCR cache path: {ocrEngine.assetPaths?.cachePath ?? "(n/a)"}
+          </p>
           <p className="text-xs text-[color:var(--text-subtle)]">OCR text: {debugState.lastOcrText || "(none)"}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">Confidence: {debugState.lastConfidence !== null ? formatPercentRatio(debugState.lastConfidence) : "(n/a)"}</p>
           <p className="text-xs text-[color:var(--text-subtle)]">Candidate: {debugState.lastCandidate ?? "(none)"}</p>

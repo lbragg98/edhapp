@@ -34,6 +34,13 @@ export async function getScannerOcrRuntimeStatus() {
       source: "remote" as const,
       lastError: null as string | null,
       failureStage: null as "worker_init" | "asset_load" | "ocr_recognize" | null,
+      initDurationMs: null as number | null,
+      assetPaths: {
+        langPath: "remote",
+        corePath: "remote",
+        workerPath: "remote",
+        cachePath: "remote",
+      },
     };
   }
 
@@ -49,5 +56,7 @@ export async function getScannerOcrRuntimeStatus() {
     source: "local_tesseract" as const,
     lastError: ready || initializing ? null : runtime.lastError ?? initialized.message ?? null,
     failureStage: ready || initializing ? null : runtime.failureStage ?? initialized.failureStage ?? null,
+    initDurationMs: runtime.initDurationMs ?? null,
+    assetPaths: runtime.assetPaths,
   };
 }
