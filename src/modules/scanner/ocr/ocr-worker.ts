@@ -21,6 +21,8 @@ const LANGUAGE_LOAD_TIMEOUT_MS = 10_000;
 
 type OcrWorkerState = {
   workerPromise: ReturnType<typeof createWorker> | null;
+  activeInitId: number;
+  cancelledInitIds: Set<number>;
   ready: boolean;
   initializing: boolean;
   initStartedAt: number | null;
@@ -33,6 +35,8 @@ type OcrWorkerState = {
 
 const state: OcrWorkerState = {
   workerPromise: null,
+  activeInitId: 0,
+  cancelledInitIds: new Set<number>(),
   ready: false,
   initializing: false,
   initStartedAt: null,
@@ -137,6 +141,7 @@ async function createAndInitializeWorker() {
 }
 
 function finalizeInitializationError(message: string, failureStage: OcrFailureStage) {
+  state.cancelledInitIds.add(state.activeInitId);
   state.lastInitDurationMs = state.initStartedAt ? Date.now() - state.initStartedAt : null;
   state.ready = false;
   state.initializing = false;
@@ -151,6 +156,8 @@ function ensureInitializationStarted() {
     return;
   }
 
+  state.activeInitId += 1;
+  const initId = state.activeInitId;
   state.initializing = true;
   state.initStartedAt = Date.now();
   state.lastInitDurationMs = null;
@@ -160,7 +167,13 @@ function ensureInitializationStarted() {
   state.workerPromise = createAndInitializeWorker();
 
   state.workerPromise
-    .then(() => {
+    .then(async (worker) => {
+      if (state.cancelledInitIds.has(initId) || state.activeInitId !== initId) {
+        state.cancelledInitIds.delete(initId);
+        await worker.terminate().catch(() => undefined);
+        return;
+      }
+
       state.lastInitDurationMs = state.initStartedAt ? Date.now() - state.initStartedAt : null;
       state.ready = true;
       state.initializing = false;
@@ -278,6 +291,31 @@ export async function getSharedOcrWorker() {
   return state.workerPromise;
 }
 
+export async function shutdownSharedOcrWorker() {
+  const activePromise = state.workerPromise;
+
+  state.cancelledInitIds.add(state.activeInitId);
+  state.workerPromise = null;
+  state.initializing = false;
+  state.ready = false;
+  state.initStartedAt = null;
+  state.lastInitDurationMs = null;
+  state.lastError = null;
+  state.lastFailureStage = null;
+  setInitPhase("idle");
+
+  if (!activePromise) {
+    return;
+  }
+
+  try {
+    const worker = await activePromise;
+    await worker.terminate();
+  } catch {
+    // Best-effort cleanup for timed-out init attempts.
+  }
+}
+
 export function getOcrWorkerRuntimeStatus() {
   enforceInitializationTimeouts();
 
@@ -305,4 +343,3 @@ export function getOcrWorkerRuntimeStatus() {
     },
   };
 }
-

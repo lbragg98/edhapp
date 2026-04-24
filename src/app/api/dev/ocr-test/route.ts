@@ -4,6 +4,7 @@ import { DefaultRegionDetector } from "@/modules/scanner/infrastructure/detectio
 import { createOcrProvider } from "@/modules/scanner/ocr/providers";
 import { getOcrWorkerRuntimeStatus, initializeSharedOcrWorker } from "@/modules/scanner/ocr/ocr-worker";
 import type { ScannerRegion } from "@/modules/scanner/domain/scanner-record";
+import { requireDiagnosticsAccess, withTimeout } from "@/server/dev/diagnostics-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -80,10 +81,15 @@ function fallbackRegion(): ScannerRegion[] {
   ];
 }
 
-export async function GET() {
+export async function GET(request: Request) {
+  const access = requireDiagnosticsAccess(request);
+  if (!access.ok) {
+    return access.response;
+  }
+
   const { mode } = createOcrProvider();
   if (mode === "browser") {
-    await initializeSharedOcrWorker({ timeoutMs: 500 });
+    await initializeSharedOcrWorker({ timeoutMs: 5000 });
   }
 
   const diagnostics = buildSteps();
@@ -95,6 +101,12 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const access = requireDiagnosticsAccess(request);
+  if (!access.ok) {
+    return access.response;
+  }
+
+  const startedAt = Date.now();
   const { mode, adapter } = createOcrProvider();
   if (mode === "disabled") {
     return noStoreJson(
@@ -135,19 +147,40 @@ export async function POST(request: Request) {
   const detector = new DefaultRegionDetector();
   const detected = await detector.detect(preprocessed.image);
   const regions = detected.length > 0 ? detected : fallbackRegion();
-  const result = await adapter.recognize({
-    image: preprocessed.image,
-    regions,
-  });
+  const result = await withTimeout(
+    adapter.recognize({
+      image: preprocessed.image,
+      regions,
+    }),
+    15_000,
+    "OCR_RECOGNITION_TIMEOUT",
+  ).catch((error) => ({
+    status: "timeout" as const,
+    regions: [],
+    message: error instanceof Error ? error.message : "OCR recognition timed out.",
+    workerInitialized: false,
+    failureStage: "ocr_recognize" as const,
+  }));
 
   const status = result.status === "ok" ? 200 : result.status === "timeout" ? 504 : 503;
   return noStoreJson(
     {
       provider: mode,
+      durationMs: Date.now() - startedAt,
+      extractedText: result.regions.map((region) => region.text).join("\n").trim(),
+      confidence:
+        result.regions.length > 0
+          ? Number(
+              (
+                result.regions.reduce((sum, region) => sum + region.confidence, 0) /
+                Math.max(1, result.regions.length)
+              ).toFixed(4),
+            )
+          : 0,
+      failureStage: result.failureStage ?? null,
       result,
       runtime: getOcrWorkerRuntimeStatus(),
     },
     status,
   );
 }
-

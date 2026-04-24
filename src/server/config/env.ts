@@ -8,6 +8,7 @@ const environmentSchema = z.object({
   NEXT_PUBLIC_AUTH_REDIRECT_BASE_URL: z.string().url().optional(),
   NEXT_PUBLIC_SUPABASE_URL: z.string().url().optional(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1).optional(),
+  DEV_DIAGNOSTICS_KEY: z.string().min(1).optional(),
   SCANNER_OCR_ENDPOINT: z.string().url().optional(),
   SCANNER_OCR_API_KEY: z.string().min(1).optional(),
   OCR_PROVIDER: z.enum(["browser", "server", "disabled"]).optional(),
